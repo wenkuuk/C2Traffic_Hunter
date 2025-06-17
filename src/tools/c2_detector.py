@@ -33,6 +33,8 @@ class C2Detector:
                 r'python-requests/',
                 r'Go-http-client/',
                 r'^[A-Za-z0-9+/]{20,}={0,2}$',  # Base64-like patterns
+                r'.*bot.*',
+                r'.*crawler.*',
             ],
             'url_patterns': [
                 r'/[a-f0-9]{32}',  # MD5-like hashes
@@ -41,12 +43,20 @@ class C2Detector:
                 r'/\d{10,13}',  # Timestamps
                 r'/(data|config|update|check|beacon|ping)$',
                 r'/[a-z]{2,3}/[a-z]{2,3}$',  # Short path segments
+                r'/admin/.*',
+                r'/panel/.*',
+                r'/gate\.php',
+                r'/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}',  # UUID paths
             ],
-            'headers': [
+            'suspicious_headers': [
                 'X-Forwarded-For',
                 'X-Real-IP',
                 'X-Custom-',
                 'Authorization: Basic',
+                'x-session-token',
+                'x-auth-key', 
+                'x-bot-id',
+                'x-campaign-id',
             ],
             'file_extensions': [
                 '.php', '.asp', '.aspx', '.jsp', '.cgi'
@@ -109,6 +119,21 @@ class C2Detector:
                 return True
         return False
 
+    def is_http_traffic(self, payload: str) -> bool:
+        """Check if packet contains HTTP traffic"""
+        http_methods = ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS']
+        http_responses = ['HTTP/1.0', 'HTTP/1.1', 'HTTP/2.0']
+        
+        for method in http_methods:
+            if payload.startswith(method + ' '):
+                return True
+        
+        for response in http_responses:
+            if payload.startswith(response):
+                return True
+                
+        return False
+
     def parse_http_request(self, payload: bytes) -> Dict:
         """Parse HTTP request from raw payload"""
         try:
@@ -130,10 +155,19 @@ class C2Detector:
             
             # Parse headers
             headers = {}
-            for line in lines[1:]:
+            body = ""
+            body_start = 0
+            
+            for i, line in enumerate(lines[1:], 1):
+                if line == '':  # Empty line indicates start of body
+                    body_start = i + 1
+                    break
                 if ':' in line:
                     key, value = line.split(':', 1)
                     headers[key.strip().lower()] = value.strip()
+            
+            # Extract body
+            body = '\r\n'.join(lines[body_start:]) if body_start < len(lines) else ''
             
             return {
                 'method': method,
@@ -141,6 +175,7 @@ class C2Detector:
                 'headers': headers,
                 'host': headers.get('host', ''),
                 'user_agent': headers.get('user-agent', ''),
+                'body': body,
                 'full_payload': payload_str
             }
             
@@ -225,18 +260,20 @@ class C2Detector:
             tcp_layer = packet[TCP]
             ip_layer = packet[IP]
             
-            # Check if this is HTTP traffic (port 80 or contains HTTP)
-            if tcp_layer.dport != 80 and tcp_layer.sport != 80:
-                return
+            # Check if this is HTTP traffic (port 80, 8080, or non-standard ports with HTTP content)
+            is_http_port = tcp_layer.dport in [80, 8080] or tcp_layer.sport in [80, 8080]
             
             if not packet.haslayer(Raw):
                 return
                 
             payload = packet[Raw].load
-            
-            # Try to determine if this is HTTP request or response
             payload_str = payload.decode('utf-8', errors='ignore')
             
+            # Check if it's HTTP traffic by content or port
+            if not is_http_port and not self.is_http_traffic(payload_str):
+                return
+            
+            # Try to determine if this is HTTP request or response
             if payload_str.startswith(('GET ', 'POST ', 'PUT ', 'DELETE ', 'HEAD ', 'OPTIONS ')):
                 self.analyze_http_request_packet(packet, payload)
             elif payload_str.startswith('HTTP/'):
@@ -255,6 +292,8 @@ class C2Detector:
             
             src_ip = packet[IP].src
             dst_ip = packet[IP].dst
+            src_port = packet[TCP].sport
+            dst_port = packet[TCP].dport
             timestamp = float(packet.time)
             
             method = http_data.get('method', '')
@@ -295,10 +334,29 @@ class C2Detector:
                 suspicion_score += 2
                 reasons.append(f"High entropy in path: {path_entropy:.2f}")
             
+            # Check for suspicious headers
+            for header, value in http_data.get('headers', {}).items():
+                if any(suspicious_header.lower() in header.lower() 
+                       for suspicious_header in self.suspicious_patterns['suspicious_headers']):
+                    suspicion_score += 1
+                    reasons.append(f"Suspicious header: {header}")
+            
             # Check for base64 patterns in payload
             if re.search(r'[A-Za-z0-9+/]{50,}={0,2}', http_data.get('full_payload', '')):
                 suspicion_score += 1
                 reasons.append("Base64-like content detected")
+            
+            # Check for non-standard ports
+            if dst_port not in [80, 443, 8080, 8443]:
+                suspicion_score += 1
+                reasons.append(f"Non-standard HTTP port: {dst_port}")
+            
+            # Check for suspicious file extensions
+            for ext in self.suspicious_patterns['file_extensions']:
+                if path.endswith(ext):
+                    suspicion_score += 1
+                    reasons.append(f"Suspicious file extension: {ext}")
+                    break
             
             # Record suspicious requests
             if suspicion_score >= 2:
@@ -306,6 +364,8 @@ class C2Detector:
                     'timestamp': datetime.fromtimestamp(timestamp).isoformat(),
                     'src_ip': src_ip,
                     'dst_ip': dst_ip,
+                    'src_port': src_port,
+                    'dst_port': dst_port,
                     'host': host,
                     'method': method,
                     'path': path,
@@ -326,13 +386,27 @@ class C2Detector:
                 
             # Check response size for potential file transfers
             content_length = http_data.get('content_length', 0)
+            body_entropy = self.calculate_entropy(http_data.get('body', ''))
+            
             if content_length > 10000:  # Large responses
                 self.results['file_transfers'].append({
                     'timestamp': datetime.fromtimestamp(float(packet.time)).isoformat(),
                     'src_ip': packet[IP].src,
                     'dst_ip': packet[IP].dst,
                     'size': content_length,
-                    'entropy': self.calculate_entropy(http_data.get('body', ''))
+                    'entropy': body_entropy,
+                    'status_code': http_data.get('status_code', '')
+                })
+            
+            # Check for suspicious response patterns
+            if body_entropy > 7.0 and content_length > 1000:  # High entropy content
+                self.results['statistical_anomalies'].append({
+                    'type': 'high_entropy_response',
+                    'timestamp': datetime.fromtimestamp(float(packet.time)).isoformat(),
+                    'src_ip': packet[IP].src,
+                    'dst_ip': packet[IP].dst,
+                    'entropy': body_entropy,
+                    'size': content_length
                 })
                     
         except Exception as e:
@@ -359,10 +433,17 @@ class C2Detector:
             if stats['request_count'] > 100:
                 suspicion_indicators.append(f"High request count: {stats['request_count']}")
             
-            # Consistent path patterns
+            # Consistent path patterns (could indicate automated behavior)
             unique_paths = set(stats['paths'])
-            if len(unique_paths) < len(stats['paths']) * 0.1:  # Less than 10% unique paths
+            if len(unique_paths) < len(stats['paths']) * 0.1 and len(stats['paths']) > 10:  # Less than 10% unique paths
                 suspicion_indicators.append("Repetitive path patterns")
+            
+            # Check for regular intervals (simple beaconing detection)
+            if len(stats['intervals']) > 5:
+                avg_interval = sum(stats['intervals']) / len(stats['intervals'])
+                variance = sum((x - avg_interval) ** 2 for x in stats['intervals']) / len(stats['intervals'])
+                if variance < (avg_interval * 0.1) ** 2:  # Low variance
+                    suspicion_indicators.append(f"Regular intervals detected (avg: {avg_interval:.2f}s)")
             
             if suspicion_indicators:
                 self.results['suspicious_hosts'][host_key] = suspicion_indicators
@@ -402,12 +483,67 @@ class C2Detector:
                 'suspicious_hosts': len(self.results['suspicious_hosts']),
                 'beacon_candidates': len(self.results['beacon_candidates']),
                 'suspicious_requests': len(self.results['suspicious_requests']),
-                'file_transfers': len(self.results['file_transfers'])
+                'file_transfers': len(self.results['file_transfers']),
+                'statistical_anomalies': len(self.results['statistical_anomalies'])
             },
             'details': dict(self.results)  # Convert defaultdict to regular dict
         }
         
         return report
+
+    def print_detailed_report(self, report: Dict, verbose: bool = False):
+        """Print detailed console report"""
+        print("\n" + "="*60)
+        print("C2 TRAFFIC ANALYSIS REPORT")
+        print("="*60)
+        
+        print(f"\nSummary:")
+        print(f"  Suspicious hosts: {report['summary']['suspicious_hosts']}")
+        print(f"  Beacon candidates: {report['summary']['beacon_candidates']}")
+        print(f"  Suspicious requests: {report['summary']['suspicious_requests']}")
+        print(f"  Large file transfers: {report['summary']['file_transfers']}")
+        print(f"  Statistical anomalies: {report['summary']['statistical_anomalies']}")
+        
+        if report['details']['beacon_candidates']:
+            print(f"\n[!] Potential Beaconing Activity:")
+            print("-" * 40)
+            for beacon in report['details']['beacon_candidates']:
+                print(f"  Host: {beacon['host']}")
+                print(f"    Requests: {beacon['request_count']}")
+                print(f"    Avg interval: {beacon['avg_interval']:.2f}s")
+                print(f"    Regularity score: {1-beacon['coefficient_of_variation']:.2f}")
+        
+        if report['details']['suspicious_hosts']:
+            print(f"\n[!] Suspicious Hosts:")
+            print("-" * 40)
+            for host, indicators in list(report['details']['suspicious_hosts'].items())[:5]:
+                print(f"  {host}")
+                for indicator in indicators:
+                    print(f"    - {indicator}")
+        
+        if report['details']['suspicious_requests'] and verbose:
+            print(f"\n[!] Top Suspicious Requests:")
+            print("-" * 40)
+            for req in sorted(report['details']['suspicious_requests'], 
+                            key=lambda x: x['suspicion_score'], reverse=True)[:10]:
+                print(f"  {req['src_ip']}:{req['src_port']} -> {req['dst_ip']}:{req['dst_port']}")
+                print(f"    Host: {req['host']}")
+                print(f"    Path: {req['path']}")
+                print(f"    Method: {req['method']}")
+                print(f"    Score: {req['suspicion_score']}")
+                print(f"    Reasons: {', '.join(req['reasons'])}")
+                print()
+        
+        if report['details']['file_transfers']:
+            print(f"\n[!] Large File Transfers:")
+            print("-" * 40)
+            for transfer in report['details']['file_transfers'][:5]:
+                print(f"  {transfer['src_ip']} -> {transfer['dst_ip']}")
+                print(f"    Size: {transfer['size']:,} bytes")
+                print(f"    Entropy: {transfer['entropy']:.2f}")
+                print(f"    Status: {transfer.get('status_code', 'unknown')}")
+        
+        print("\n" + "="*60)
 
 def main():
     parser = argparse.ArgumentParser(description="C2 Traffic Detection in PCAP files")
@@ -426,38 +562,14 @@ def main():
             with open(args.output, 'w') as f:
                 json.dump(report, f, indent=2, default=str)
             print(f"Report saved to {args.output}")
-        else:
-            print("\n" + "="*50)
-            print("C2 TRAFFIC ANALYSIS REPORT")
-            print("="*50)
-            
-            print(f"\nSummary:")
-            print(f"  Suspicious hosts: {report['summary']['suspicious_hosts']}")
-            print(f"  Beacon candidates: {report['summary']['beacon_candidates']}")
-            print(f"  Suspicious requests: {report['summary']['suspicious_requests']}")
-            print(f"  Large file transfers: {report['summary']['file_transfers']}")
-            
-            if report['details']['beacon_candidates']:
-                print(f"\nPotential Beaconing Activity:")
-                for beacon in report['details']['beacon_candidates']:
-                    print(f"  Host: {beacon['host']}")
-                    print(f"    Requests: {beacon['request_count']}")
-                    print(f"    Avg interval: {beacon['avg_interval']:.2f}s")
-                    print(f"    Regularity: {1-beacon['coefficient_of_variation']:.2f}")
-            
-            if report['details']['suspicious_requests'] and args.verbose:
-                print(f"\nTop Suspicious Requests:")
-                for req in sorted(report['details']['suspicious_requests'], 
-                                key=lambda x: x['suspicion_score'], reverse=True)[:5]:
-                    print(f"  {req['src_ip']} -> {req['dst_ip']} ({req['host']})")
-                    print(f"    Path: {req['path']}")
-                    print(f"    Score: {req['suspicion_score']}")
-                    print(f"    Reasons: {', '.join(req['reasons'])}")
+        
+        if not args.output or args.verbose:
+            detector.print_detailed_report(report, args.verbose)
+        
+        return 0
     else:
         print("Analysis failed!")
         return 1
-    
-    return 0
 
 if __name__ == "__main__":
     exit(main())
