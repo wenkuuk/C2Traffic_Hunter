@@ -17,7 +17,8 @@ import math
 
 try:
     from scapy.all import rdpcap, TCP, IP, Raw
-    from scapy.layers.http import HTTPRequest, HTTPResponse
+    from scapy.layers.inet import TCP, IP
+    from scapy.packet import Packet
 except ImportError:
     print("Error: scapy not installed. Install with: pip install scapy")
     exit(1)
@@ -66,6 +67,7 @@ class C2Detector:
             'user_agents': set(),
             'paths': [],
             'response_sizes': [],
+            'timestamps': [],
             'last_seen': None
         })
 
@@ -107,6 +109,85 @@ class C2Detector:
                 return True
         return False
 
+    def parse_http_request(self, payload: bytes) -> Dict:
+        """Parse HTTP request from raw payload"""
+        try:
+            # Decode payload
+            payload_str = payload.decode('utf-8', errors='ignore')
+            lines = payload_str.split('\r\n')
+            
+            if not lines:
+                return {}
+            
+            # Parse request line
+            request_line = lines[0]
+            parts = request_line.split(' ')
+            if len(parts) < 3:
+                return {}
+            
+            method = parts[0]
+            path = parts[1]
+            
+            # Parse headers
+            headers = {}
+            for line in lines[1:]:
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    headers[key.strip().lower()] = value.strip()
+            
+            return {
+                'method': method,
+                'path': path,
+                'headers': headers,
+                'host': headers.get('host', ''),
+                'user_agent': headers.get('user-agent', ''),
+                'full_payload': payload_str
+            }
+            
+        except Exception as e:
+            return {}
+
+    def parse_http_response(self, payload: bytes) -> Dict:
+        """Parse HTTP response from raw payload"""
+        try:
+            payload_str = payload.decode('utf-8', errors='ignore')
+            lines = payload_str.split('\r\n')
+            
+            if not lines:
+                return {}
+            
+            # Parse status line
+            status_line = lines[0]
+            parts = status_line.split(' ')
+            if len(parts) < 3:
+                return {}
+            
+            status_code = parts[1] if len(parts) > 1 else ''
+            
+            # Parse headers
+            headers = {}
+            body_start = 0
+            for i, line in enumerate(lines[1:], 1):
+                if line == '':  # Empty line indicates start of body
+                    body_start = i + 1
+                    break
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    headers[key.strip().lower()] = value.strip()
+            
+            # Extract body
+            body = '\r\n'.join(lines[body_start:]) if body_start < len(lines) else ''
+            
+            return {
+                'status_code': status_code,
+                'headers': headers,
+                'body': body,
+                'content_length': len(body)
+            }
+            
+        except Exception as e:
+            return {}
+
     def analyze_beaconing(self, host: str, timestamps: List[float]) -> Dict:
         """Analyze timing patterns for potential beaconing"""
         if len(timestamps) < 3:
@@ -137,39 +218,62 @@ class C2Detector:
 
     def analyze_packet(self, packet):
         """Analyze individual packet for suspicious indicators"""
-        if not packet.haslayer(TCP):
-            return
-            
-        if packet.haslayer(HTTPRequest):
-            self.analyze_http_request(packet)
-        elif packet.haslayer(HTTPResponse):
-            self.analyze_http_response(packet)
-
-    def analyze_http_request(self, packet):
-        """Analyze HTTP request for C2 indicators"""
         try:
-            http_layer = packet[HTTPRequest]
+            if not packet.haslayer(TCP) or not packet.haslayer(IP):
+                return
+                
+            tcp_layer = packet[TCP]
+            ip_layer = packet[IP]
             
-            # Extract basic info
-            method = http_layer.Method.decode() if http_layer.Method else ''
-            host = http_layer.Host.decode() if http_layer.Host else ''
-            path = http_layer.Path.decode() if http_layer.Path else ''
-            user_agent = http_layer.User_Agent.decode() if http_layer.User_Agent else ''
+            # Check if this is HTTP traffic (port 80 or contains HTTP)
+            if tcp_layer.dport != 80 and tcp_layer.sport != 80:
+                return
+            
+            if not packet.haslayer(Raw):
+                return
+                
+            payload = packet[Raw].load
+            
+            # Try to determine if this is HTTP request or response
+            payload_str = payload.decode('utf-8', errors='ignore')
+            
+            if payload_str.startswith(('GET ', 'POST ', 'PUT ', 'DELETE ', 'HEAD ', 'OPTIONS ')):
+                self.analyze_http_request_packet(packet, payload)
+            elif payload_str.startswith('HTTP/'):
+                self.analyze_http_response_packet(packet, payload)
+                
+        except Exception as e:
+            # Silently continue on packet parsing errors
+            pass
+
+    def analyze_http_request_packet(self, packet, payload: bytes):
+        """Analyze HTTP request packet"""
+        try:
+            http_data = self.parse_http_request(payload)
+            if not http_data:
+                return
             
             src_ip = packet[IP].src
             dst_ip = packet[IP].dst
             timestamp = float(packet.time)
             
+            method = http_data.get('method', '')
+            host = http_data.get('host', '')
+            path = http_data.get('path', '')
+            user_agent = http_data.get('user_agent', '')
+            
             # Update host statistics
             host_key = f"{src_ip}->{dst_ip}:{host}"
-            self.host_stats[host_key]['request_count'] += 1
-            self.host_stats[host_key]['user_agents'].add(user_agent)
-            self.host_stats[host_key]['paths'].append(path)
+            stats = self.host_stats[host_key]
+            stats['request_count'] += 1
+            stats['user_agents'].add(user_agent)
+            stats['paths'].append(path)
+            stats['timestamps'].append(timestamp)
             
-            if self.host_stats[host_key]['last_seen']:
-                interval = timestamp - self.host_stats[host_key]['last_seen']
-                self.host_stats[host_key]['intervals'].append(interval)
-            self.host_stats[host_key]['last_seen'] = timestamp
+            if stats['last_seen']:
+                interval = timestamp - stats['last_seen']
+                stats['intervals'].append(interval)
+            stats['last_seen'] = timestamp
             
             # Check for suspicious indicators
             suspicion_score = 0
@@ -191,12 +295,10 @@ class C2Detector:
                 suspicion_score += 2
                 reasons.append(f"High entropy in path: {path_entropy:.2f}")
             
-            # Check for base64 patterns in headers or body
-            if packet.haslayer(Raw):
-                payload = packet[Raw].load.decode('utf-8', errors='ignore')
-                if re.search(r'[A-Za-z0-9+/]{50,}={0,2}', payload):
-                    suspicion_score += 1
-                    reasons.append("Base64-like content detected")
+            # Check for base64 patterns in payload
+            if re.search(r'[A-Za-z0-9+/]{50,}={0,2}', http_data.get('full_payload', '')):
+                suspicion_score += 1
+                reasons.append("Base64-like content detected")
             
             # Record suspicious requests
             if suspicion_score >= 2:
@@ -213,33 +315,35 @@ class C2Detector:
                 })
                 
         except Exception as e:
-            print(f"Error analyzing HTTP request: {e}")
+            pass
 
-    def analyze_http_response(self, packet):
-        """Analyze HTTP response for C2 indicators"""
+    def analyze_http_response_packet(self, packet, payload: bytes):
+        """Analyze HTTP response packet"""
         try:
-            if packet.haslayer(Raw):
-                payload = packet[Raw].load
+            http_data = self.parse_http_response(payload)
+            if not http_data:
+                return
                 
-                # Check response size for potential file transfers
-                if len(payload) > 10000:  # Large responses
-                    self.results['file_transfers'].append({
-                        'timestamp': datetime.fromtimestamp(float(packet.time)).isoformat(),
-                        'src_ip': packet[IP].src,
-                        'dst_ip': packet[IP].dst,
-                        'size': len(payload),
-                        'entropy': self.calculate_entropy(payload.decode('utf-8', errors='ignore'))
-                    })
+            # Check response size for potential file transfers
+            content_length = http_data.get('content_length', 0)
+            if content_length > 10000:  # Large responses
+                self.results['file_transfers'].append({
+                    'timestamp': datetime.fromtimestamp(float(packet.time)).isoformat(),
+                    'src_ip': packet[IP].src,
+                    'dst_ip': packet[IP].dst,
+                    'size': content_length,
+                    'entropy': self.calculate_entropy(http_data.get('body', ''))
+                })
                     
         except Exception as e:
-            print(f"Error analyzing HTTP response: {e}")
+            pass
 
     def finalize_analysis(self):
         """Perform final analysis after processing all packets"""
         # Analyze beaconing patterns
         for host_key, stats in self.host_stats.items():
-            if len(stats['intervals']) >= 3:
-                beacon_analysis = self.analyze_beaconing(host_key, stats['intervals'])
+            if len(stats['timestamps']) >= 3:
+                beacon_analysis = self.analyze_beaconing(host_key, stats['timestamps'])
                 if beacon_analysis and beacon_analysis.get('is_regular'):
                     self.results['beacon_candidates'].append(beacon_analysis)
         
@@ -287,6 +391,11 @@ class C2Detector:
 
     def generate_report(self) -> Dict:
         """Generate analysis report"""
+        # Convert sets to lists for JSON serialization
+        for host_key, stats in self.host_stats.items():
+            if isinstance(stats.get('user_agents'), set):
+                stats['user_agents'] = list(stats['user_agents'])
+        
         report = {
             'analysis_timestamp': datetime.now().isoformat(),
             'summary': {
@@ -295,13 +404,8 @@ class C2Detector:
                 'suspicious_requests': len(self.results['suspicious_requests']),
                 'file_transfers': len(self.results['file_transfers'])
             },
-            'details': self.results
+            'details': dict(self.results)  # Convert defaultdict to regular dict
         }
-        
-        # Convert sets to lists for JSON serialization
-        for host_key, stats in self.host_stats.items():
-            if isinstance(stats.get('user_agents'), set):
-                stats['user_agents'] = list(stats['user_agents'])
         
         return report
 
