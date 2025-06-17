@@ -1,0 +1,4 @@
+
+# Requirements for C2 Traffic Detection Script
+scapy>=2.4.5
+python-dateutil>=2.8.2
