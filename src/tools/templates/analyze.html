@@ -1,0 +1,383 @@
+
+{% extends "base.html" %}
+
+{% block title %}Analyze Traffic - C2 Detection{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-10 mx-auto">
+        <h2 class="mb-4">
+            <i class="fas fa-search me-2"></i>
+            Traffic Analysis
+        </h2>
+
+        <!-- Upload Section -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Upload PCAP File</h5>
+            </div>
+            <div class="card-body">
+                <div id="upload-zone" class="upload-zone">
+                    <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                    <h5>Drop PCAP file here or click to browse</h5>
+                    <p class="text-muted">Supported formats: .pcap, .pcapng, .cap (Max: 100MB)</p>
+                    <input type="file" id="file-input" class="d-none" accept=".pcap,.pcapng,.cap">
+                    <button type="button" class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+                        <i class="fas fa-folder-open me-2"></i>Browse Files
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress Section -->
+        <div id="progress-section" class="card mb-4" style="display: none;">
+            <div class="card-header">
+                <h5 class="mb-0">Analysis Progress</h5>
+            </div>
+            <div class="card-body">
+                <div class="progress mb-3">
+                    <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%"></div>
+                </div>
+                <div id="progress-text">Uploading file...</div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-section" style="display: none;">
+            <!-- Threat Summary -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        Threat Assessment
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-3">
+                            <div id="threat-level" class="display-6 fw-bold">-</div>
+                            <div class="text-muted">Threat Level</div>
+                        </div>
+                        <div class="col-md-3">
+                            <div id="threat-score" class="display-6">-</div>
+                            <div class="text-muted">Threat Score</div>
+                        </div>
+                        <div class="col-md-3">
+                            <div id="total-sessions" class="display-6">-</div>
+                            <div class="text-muted">Total Sessions</div>
+                        </div>
+                        <div class="col-md-3">
+                            <div id="total-detections" class="display-6">-</div>
+                            <div class="text-muted">Total Detections</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detection Details -->
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                <i class="fas fa-fingerprint me-2"></i>
+                                Signature Detections
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="signature-detections"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                <i class="fas fa-brain me-2"></i>
+                                ML Classifications
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="ml-classifications"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                <i class="fas fa-wifi me-2"></i>
+                                Beaconing Patterns
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="beaconing-patterns"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                <i class="fas fa-chart-line me-2"></i>
+                                Behavioral Anomalies
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="behavioral-anomalies"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    const uploadZone = $('#upload-zone');
+    const fileInput = $('#file-input');
+    const progressSection = $('#progress-section');
+    const progressBar = $('#progress-bar');
+    const progressText = $('#progress-text');
+    const resultsSection = $('#results-section');
+
+    // Drag and drop handlers
+    uploadZone.on('dragover', function(e) {
+        e.preventDefault();
+        $(this).addClass('dragover');
+    });
+
+    uploadZone.on('dragleave', function(e) {
+        e.preventDefault();
+        $(this).removeClass('dragover');
+    });
+
+    uploadZone.on('drop', function(e) {
+        e.preventDefault();
+        $(this).removeClass('dragover');
+        const files = e.originalEvent.dataTransfer.files;
+        if (files.length > 0) {
+            handleFile(files[0]);
+        }
+    });
+
+    fileInput.on('change', function() {
+        if (this.files.length > 0) {
+            handleFile(this.files[0]);
+        }
+    });
+
+    function handleFile(file) {
+        // Validate file
+        const allowedTypes = ['pcap', 'pcapng', 'cap'];
+        const fileExt = file.name.split('.').pop().toLowerCase();
+        
+        if (!allowedTypes.includes(fileExt)) {
+            alert('Invalid file type. Please upload a PCAP file.');
+            return;
+        }
+
+        if (file.size > 100 * 1024 * 1024) {
+            alert('File too large. Maximum size is 100MB.');
+            return;
+        }
+
+        uploadFile(file);
+    }
+
+    function uploadFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        // Show progress
+        progressSection.show();
+        resultsSection.hide();
+        progressBar.css('width', '0%');
+        progressText.text('Uploading file...');
+
+        $.ajax({
+            url: '/upload',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            xhr: function() {
+                const xhr = new window.XMLHttpRequest();
+                xhr.upload.addEventListener('progress', function(e) {
+                    if (e.lengthComputable) {
+                        const percentComplete = (e.loaded / e.total) * 50; // Upload is 50% of progress
+                        progressBar.css('width', percentComplete + '%');
+                    }
+                }, false);
+                return xhr;
+            },
+            success: function(response) {
+                progressBar.css('width', '100%');
+                progressText.text('Analysis complete!');
+                
+                setTimeout(function() {
+                    displayResults(response.report);
+                    progressSection.hide();
+                    resultsSection.show();
+                }, 1000);
+            },
+            error: function(xhr) {
+                progressSection.hide();
+                const error = xhr.responseJSON ? xhr.responseJSON.error : 'Upload failed';
+                alert('Error: ' + error);
+            }
+        });
+
+        // Simulate analysis progress
+        setTimeout(function() {
+            progressBar.css('width', '75%');
+            progressText.text('Analyzing traffic patterns...');
+        }, 2000);
+    }
+
+    function displayResults(report) {
+        const summary = report.summary;
+        const detections = report.detections;
+
+        // Threat summary
+        $('#threat-level').text(summary.threat_level).removeClass().addClass('display-6 fw-bold threat-' + summary.threat_level.toLowerCase());
+        $('#threat-score').text(summary.threat_score.toFixed(2));
+        $('#total-sessions').text(summary.total_sessions);
+        $('#total-detections').text(
+            summary.signature_detections + 
+            summary.ml_classifications + 
+            summary.beaconing_patterns + 
+            summary.behavioral_anomalies
+        );
+
+        // Signature detections
+        displaySignatureDetections(detections.signature_detections || []);
+        
+        // ML classifications
+        displayMLClassifications(detections.ml_classifications || []);
+        
+        // Beaconing patterns
+        displayBeaconingPatterns(detections.beaconing_patterns || []);
+        
+        // Behavioral anomalies
+        displayBehavioralAnomalies(detections.behavioral_anomalies || []);
+    }
+
+    function displaySignatureDetections(detections) {
+        const container = $('#signature-detections');
+        container.empty();
+
+        if (detections.length === 0) {
+            container.html('<p class="text-muted">No signature-based detections found.</p>');
+            return;
+        }
+
+        detections.slice(0, 5).forEach(function(detection) {
+            const session = detection.session;
+            const html = `
+                <div class="detection-card border-start border-danger border-3 ps-3 mb-3">
+                    <div class="fw-bold">${session.src_ip} → ${session.dst_ip}</div>
+                    <div class="text-muted small">Host: ${session.host}</div>
+                    <div class="text-muted small">Path: ${session.path}</div>
+                    <div class="mt-2">
+                        <span class="badge bg-danger">Score: ${detection.score}</span>
+                        ${detection.matches.map(match => `<span class="signature-match ms-1">${match}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+            container.append(html);
+        });
+
+        if (detections.length > 5) {
+            container.append(`<p class="text-muted">... and ${detections.length - 5} more detections</p>`);
+        }
+    }
+
+    function displayMLClassifications(classifications) {
+        const container = $('#ml-classifications');
+        container.empty();
+
+        if (classifications.length === 0) {
+            container.html('<p class="text-muted">No ML-based classifications found.</p>');
+            return;
+        }
+
+        classifications.slice(0, 5).forEach(function(classification) {
+            const session = classification.session;
+            const html = `
+                <div class="detection-card border-start border-info border-3 ps-3 mb-3">
+                    <div class="fw-bold">${session.src_ip} → ${session.dst_ip}</div>
+                    <div class="text-muted small">Host: ${session.host}</div>
+                    <div class="mt-2">
+                        <span class="badge bg-info">Score: ${classification.score.toFixed(2)}</span>
+                        <span class="ml-classification ms-1">${classification.reason}</span>
+                    </div>
+                </div>
+            `;
+            container.append(html);
+        });
+
+        if (classifications.length > 5) {
+            container.append(`<p class="text-muted">... and ${classifications.length - 5} more classifications</p>`);
+        }
+    }
+
+    function displayBeaconingPatterns(patterns) {
+        const container = $('#beaconing-patterns');
+        container.empty();
+
+        if (patterns.length === 0) {
+            container.html('<p class="text-muted">No beaconing patterns detected.</p>');
+            return;
+        }
+
+        patterns.forEach(function(pattern) {
+            const html = `
+                <div class="detection-card border-start border-warning border-3 ps-3 mb-3">
+                    <div class="fw-bold">${pattern.host_key}</div>
+                    <div class="text-muted small">Pattern: ${pattern.pattern_type}</div>
+                    <div class="mt-2">
+                        <span class="badge bg-warning text-dark">Sessions: ${pattern.session_count}</span>
+                        <span class="beacon-pattern ms-1">Interval: ${pattern.mean_interval.toFixed(1)}s</span>
+                        <span class="beacon-pattern ms-1">Confidence: ${pattern.confidence.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+            container.append(html);
+        });
+    }
+
+    function displayBehavioralAnomalies(anomalies) {
+        const container = $('#behavioral-anomalies');
+        container.empty();
+
+        if (anomalies.length === 0) {
+            container.html('<p class="text-muted">No behavioral anomalies detected.</p>');
+            return;
+        }
+
+        anomalies.forEach(function(anomaly) {
+            const html = `
+                <div class="detection-card border-start border-secondary border-3 ps-3 mb-3">
+                    <div class="fw-bold">${anomaly.host_key}</div>
+                    <div class="text-muted small">Type: ${anomaly.anomaly_type}</div>
+                    <div class="mt-2">
+                        <span class="badge bg-secondary">Confidence: ${anomaly.confidence.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+            container.append(html);
+        });
+    }
+});
+</script>
+{% endblock %}
