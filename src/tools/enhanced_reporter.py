@@ -8,7 +8,7 @@ from datetime import datetime
 
 
 class EnhancedReporter:
-    """Enhanced reporting with threat assessment"""
+    """Enhanced reporting with detailed threat assessment"""
     
     @staticmethod
     def generate_report(results, host_stats, threat_summary):
@@ -31,7 +31,10 @@ class EnhancedReporter:
                 'behavioral_anomalies': len(results['behavioral_anomalies']),
                 'beaconing_patterns': len(results['beaconing_patterns']),
                 'threat_level': threat_summary['threat_level'],
-                'threat_score': threat_summary['threat_score']
+                'threat_score': threat_summary['threat_score'],
+                'assessment_confidence': threat_summary.get('assessment_confidence', 0),
+                'correlation_bonus': threat_summary.get('correlation_bonus', 0),
+                'component_scores': threat_summary.get('component_scores', {})
             },
             'details': dict(results)
         }
@@ -40,25 +43,39 @@ class EnhancedReporter:
     
     @staticmethod
     def print_detailed_report(report, verbose=False):
-        """Enhanced console report with threat assessment"""
+        """Enhanced console report with detailed threat assessment"""
         print("\n" + "="*70)
         print("ADVANCED C2 TRAFFIC ANALYSIS REPORT")
         print("="*70)
         
-        print(f"\nTHREAT ASSESSMENT: {report['summary']['threat_level']}")
-        print(f"Threat Score: {report['summary']['threat_score']:.2f}")
+        summary = report['summary']
+        
+        print(f"\nTHREAT ASSESSMENT: {summary['threat_level']}")
+        print(f"Threat Score: {summary['threat_score']:.3f}")
+        print(f"Assessment Confidence: {summary.get('assessment_confidence', 0):.3f}")
+        if summary.get('correlation_bonus', 0) > 0:
+            print(f"Correlation Bonus: +{summary['correlation_bonus']:.3f}")
+        
+        # Display component scores breakdown
+        component_scores = summary.get('component_scores', {})
+        if component_scores:
+            print(f"\nCOMPONENT SCORES:")
+            for component, score in component_scores.items():
+                component_name = component.replace('_', ' ').title()
+                print(f"  {component_name}: {score:.3f}")
         
         print(f"\nDETECTION SUMMARY:")
-        print(f"  Suspicious hosts: {report['summary']['suspicious_hosts']}")
-        print(f"  Beacon candidates: {report['summary']['beacon_candidates']}")
-        print(f"  Suspicious requests: {report['summary']['suspicious_requests']}")
-        print(f"  Signature detections: {report['summary']['signature_detections']}")
-        print(f"  ML classifications: {report['summary']['ml_classifications']}")
-        print(f"  Behavioral anomalies: {report['summary']['behavioral_anomalies']}")
-        print(f"  Large file transfers: {report['summary']['file_transfers']}")
-        print(f"  Statistical anomalies: {report['summary']['statistical_anomalies']}")
+        print(f"  Suspicious hosts: {summary['suspicious_hosts']}")
+        print(f"  Beacon candidates: {summary['beacon_candidates']}")
+        print(f"  Suspicious requests: {summary['suspicious_requests']}")
+        print(f"  Signature detections: {summary['signature_detections']}")
+        print(f"  ML classifications: {summary['ml_classifications']}")
+        print(f"  Behavioral anomalies: {summary['behavioral_anomalies']}")
+        print(f"  Beaconing patterns: {summary['beaconing_patterns']}")
+        print(f"  Large file transfers: {summary['file_transfers']}")
+        print(f"  Statistical anomalies: {summary['statistical_anomalies']}")
         
-        if verbose and report['summary']['threat_level'] != 'LOW':
+        if verbose and summary['threat_level'] not in ['LOW', 'LOW-MEDIUM']:
             # Show signature detections
             if report['details']['signature_detections']:
                 print(f"\n[!] SIGNATURE DETECTIONS:")
@@ -84,7 +101,7 @@ class EnhancedReporter:
                     print(f"    Reason: {classification['ml_reason']}")
                     print()
             
-            # Show beaconing patterns
+            # Show beaconing patterns with enhanced details
             if report['details']['beaconing_patterns']:
                 print(f"\n[!] BEACONING PATTERNS:")
                 print("-" * 50)
@@ -93,7 +110,23 @@ class EnhancedReporter:
                     print(f"    Pattern: {beacon['pattern_type']}")
                     print(f"    Sessions: {beacon['session_count']}")
                     print(f"    Interval: {beacon['mean_interval']:.1f}s")
-                    print(f"    Confidence: {beacon['confidence']:.2f}")
+                    print(f"    Regularity: {beacon['confidence']:.2f}")
+                    if beacon.get('duration'):
+                        print(f"    Duration: {beacon['duration']:.0f}s")
+                    print()
+            
+            # Show behavioral anomalies with details
+            if report['details']['behavioral_anomalies']:
+                print(f"\n[!] BEHAVIORAL ANOMALIES:")
+                print("-" * 50)
+                for anomaly in report['details']['behavioral_anomalies']:
+                    print(f"  Host: {anomaly['host_key']}")
+                    print(f"    Type: {anomaly['anomaly_type']}")
+                    print(f"    Confidence: {anomaly['confidence']:.2f}")
+                    if 'count' in anomaly:
+                        print(f"    Count: {anomaly['count']}")
+                    if 'unique_ratio' in anomaly:
+                        print(f"    Unique Ratio: {anomaly['unique_ratio']:.2f}")
                     print()
         
         if report['details']['beacon_candidates']:
