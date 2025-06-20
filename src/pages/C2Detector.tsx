@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +8,8 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import ThreatAssessmentCard from "@/components/ThreatAssessmentCard";
+import AnalysisHistory from "@/components/AnalysisHistory";
+import { useAnalysisHistory } from "@/hooks/useAnalysisHistory";
 
 interface EnhancedDetectionResult {
   analysis_timestamp: string;
@@ -103,6 +104,8 @@ const C2Detector = () => {
   const [results, setResults] = useState<EnhancedDetectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+  const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
+  const { saveToHistory, loadHistory } = useAnalysisHistory();
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -236,11 +239,19 @@ const C2Detector = () => {
       clearInterval(progressInterval);
       setProgress(100);
       setResults(mockResults);
+      
+      // Save to history
+      saveToHistory(file.name, mockResults);
     } catch (err) {
       setError('Analysis failed. Please try again.');
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  const handleViewHistoryResults = (historyEntry: any) => {
+    setResults(historyEntry.fullResults);
+    setActiveTab('upload');
   };
 
   return (
@@ -256,339 +267,357 @@ const C2Detector = () => {
           </p>
         </div>
 
-        {!results && (
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                Upload PCAP File
-              </CardTitle>
-              <CardDescription>
-                Select a .pcap file to analyze for potential C2 traffic patterns using enhanced threat assessment
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
-                  <input
-                    type="file"
-                    accept=".pcap"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    id="pcap-upload"
-                  />
-                  <label htmlFor="pcap-upload" className="cursor-pointer">
-                    <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-lg font-medium text-gray-700">
-                      {file ? file.name : 'Click to upload PCAP file'}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      Supports .pcap files up to 100MB
-                    </p>
-                  </label>
+        {/* Navigation Tabs */}
+        <div className="mb-6">
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'upload' | 'history')}>
+            <TabsList className="grid w-full grid-cols-2 max-w-md">
+              <TabsTrigger value="upload">Analysis</TabsTrigger>
+              <TabsTrigger value="history">History</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        {activeTab === 'upload' && (
+          <>
+            {!results && (
+              <Card className="mb-8">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Upload className="h-5 w-5" />
+                    Upload PCAP File
+                  </CardTitle>
+                  <CardDescription>
+                    Select a .pcap file to analyze for potential C2 traffic patterns using enhanced threat assessment
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                      <input
+                        type="file"
+                        accept=".pcap"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                        id="pcap-upload"
+                      />
+                      <label htmlFor="pcap-upload" className="cursor-pointer">
+                        <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                        <p className="text-lg font-medium text-gray-700">
+                          {file ? file.name : 'Click to upload PCAP file'}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          Supports .pcap files up to 100MB
+                        </p>
+                      </label>
+                    </div>
+
+                    {error && (
+                      <Alert>
+                        <AlertTriangle className="h-4 w-4" />
+                        <AlertDescription>{error}</AlertDescription>
+                      </Alert>
+                    )}
+
+                    {file && (
+                      <div className="flex justify-center">
+                        <Button 
+                          onClick={analyzeFile} 
+                          disabled={isAnalyzing}
+                          className="px-8"
+                        >
+                          {isAnalyzing ? (
+                            <>
+                              <Activity className="h-4 w-4 mr-2 animate-spin" />
+                              Analyzing...
+                            </>
+                          ) : (
+                            <>
+                              <Shield className="h-4 w-4 mr-2" />
+                              Start Enhanced Analysis
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
+
+                    {isAnalyzing && (
+                      <div className="space-y-2">
+                        <Progress value={progress} className="w-full" />
+                        <p className="text-sm text-gray-600 text-center">
+                          Processing packets with enhanced threat assessment engine...
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {results && (
+              <div className="space-y-6">
+                {/* Enhanced Threat Assessment */}
+                <ThreatAssessmentCard assessment={results.summary} />
+
+                {/* Detailed Results */}
+                <Tabs defaultValue="signatures" className="w-full">
+                  <TabsList className="grid w-full grid-cols-4">
+                    <TabsTrigger value="signatures">Signatures</TabsTrigger>
+                    <TabsTrigger value="ml">ML Analysis</TabsTrigger>
+                    <TabsTrigger value="beacons">Beacons</TabsTrigger>
+                    <TabsTrigger value="behavioral">Behavioral</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="signatures">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Signature-based Detections</CardTitle>
+                        <CardDescription>
+                          Known malicious patterns detected with confidence scoring
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {results.detections.signature_detections.length > 0 ? (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Source → Destination</TableHead>
+                                <TableHead>Host</TableHead>
+                                <TableHead>Path</TableHead>
+                                <TableHead>Score</TableHead>
+                                <TableHead>Confidence</TableHead>
+                                <TableHead>Matches</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {results.detections.signature_detections.map((detection, index) => (
+                                <TableRow key={index}>
+                                  <TableCell className="font-mono text-sm">
+                                    {detection.session.src_ip} → {detection.session.dst_ip}
+                                  </TableCell>
+                                  <TableCell>{detection.session.host}</TableCell>
+                                  <TableCell className="font-mono text-sm">
+                                    {detection.session.path}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="destructive">{detection.score}</Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline">
+                                      {(detection.confidence * 100).toFixed(0)}%
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    {detection.matches.join(', ')}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        ) : (
+                          <p className="text-gray-500 text-center py-8">
+                            No signature-based detections found
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  <TabsContent value="ml">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Machine Learning Classifications</CardTitle>
+                        <CardDescription>
+                          Suspicious patterns identified through enhanced feature analysis
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {results.detections.ml_classifications.length > 0 ? (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Source → Destination</TableHead>
+                                <TableHead>Host</TableHead>
+                                <TableHead>Path</TableHead>
+                                <TableHead>Score</TableHead>
+                                <TableHead>Confidence</TableHead>
+                                <TableHead>Category</TableHead>
+                                <TableHead>Reason</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {results.detections.ml_classifications.map((classification, index) => (
+                                <TableRow key={index}>
+                                  <TableCell className="font-mono text-sm">
+                                    {classification.session.src_ip} → {classification.session.dst_ip}
+                                  </TableCell>
+                                  <TableCell>{classification.session.host}</TableCell>
+                                  <TableCell className="font-mono text-sm">
+                                    {classification.session.path}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="secondary">
+                                      {(classification.score * 100).toFixed(0)}%
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline">
+                                      {(classification.ml_confidence * 100).toFixed(0)}%
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline">
+                                      {classification.category}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    {classification.reason}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        ) : (
+                          <p className="text-gray-500 text-center py-8">
+                            No ML classifications found
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  <TabsContent value="beacons">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Beaconing Patterns</CardTitle>
+                        <CardDescription>
+                          Regular communication patterns with enhanced strength analysis
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {results.detections.beaconing_patterns.length > 0 ? (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Host Key</TableHead>
+                                <TableHead>Sessions</TableHead>
+                                <TableHead>Interval (s)</TableHead>
+                                <TableHead>Confidence</TableHead>
+                                <TableHead>Strength</TableHead>
+                                <TableHead>Duration (h)</TableHead>
+                                <TableHead>Pattern Type</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {results.detections.beaconing_patterns.map((beacon, index) => (
+                                <TableRow key={index}>
+                                  <TableCell className="font-mono text-sm">
+                                    {beacon.host_key}
+                                  </TableCell>
+                                  <TableCell>{beacon.session_count}</TableCell>
+                                  <TableCell>{beacon.mean_interval.toFixed(1)}</TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline">
+                                      {(beacon.confidence * 100).toFixed(0)}%
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="secondary">
+                                      {(beacon.strength * 100).toFixed(0)}%
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>{beacon.duration_hours.toFixed(1)}</TableCell>
+                                  <TableCell>{beacon.pattern_type}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        ) : (
+                          <p className="text-gray-500 text-center py-8">
+                            No beaconing patterns detected
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  <TabsContent value="behavioral">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Behavioral Anomalies</CardTitle>
+                        <CardDescription>
+                          Unusual communication behaviors with statistical analysis
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {results.detections.behavioral_anomalies.length > 0 ? (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Host Key</TableHead>
+                                <TableHead>Anomaly Type</TableHead>
+                                <TableHead>Confidence</TableHead>
+                                <TableHead>Anomaly Score</TableHead>
+                                <TableHead>Z-Score</TableHead>
+                                <TableHead>Baseline</TableHead>
+                                <TableHead>Current</TableHead>
+                                <TableHead>Persistence (h)</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {results.detections.behavioral_anomalies.map((anomaly, index) => (
+                                <TableRow key={index}>
+                                  <TableCell className="font-mono text-sm">
+                                    {anomaly.host_key}
+                                  </TableCell>
+                                  <TableCell>{anomaly.anomaly_type.replace('_', ' ')}</TableCell>
+                                  <TableCell>
+                                    <Badge variant="outline">
+                                      {(anomaly.confidence * 100).toFixed(0)}%
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge variant="secondary">
+                                      {(anomaly.anomaly_score * 100).toFixed(0)}%
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>{anomaly.z_score.toFixed(2)}</TableCell>
+                                  <TableCell>{anomaly.baseline}</TableCell>
+                                  <TableCell>{anomaly.current}</TableCell>
+                                  <TableCell>{anomaly.persistence_hours.toFixed(1)}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        ) : (
+                          <p className="text-gray-500 text-center py-8">
+                            No behavioral anomalies detected
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                </Tabs>
+
+                <div className="flex justify-center">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => {
+                      setResults(null);
+                      setFile(null);
+                      setProgress(0);
+                    }}
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Analyze Another File
+                  </Button>
                 </div>
-
-                {error && (
-                  <Alert>
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
-
-                {file && (
-                  <div className="flex justify-center">
-                    <Button 
-                      onClick={analyzeFile} 
-                      disabled={isAnalyzing}
-                      className="px-8"
-                    >
-                      {isAnalyzing ? (
-                        <>
-                          <Activity className="h-4 w-4 mr-2 animate-spin" />
-                          Analyzing...
-                        </>
-                      ) : (
-                        <>
-                          <Shield className="h-4 w-4 mr-2" />
-                          Start Enhanced Analysis
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                )}
-
-                {isAnalyzing && (
-                  <div className="space-y-2">
-                    <Progress value={progress} className="w-full" />
-                    <p className="text-sm text-gray-600 text-center">
-                      Processing packets with enhanced threat assessment engine...
-                    </p>
-                  </div>
-                )}
               </div>
-            </CardContent>
-          </Card>
+            )}
+          </>
         )}
 
-        {results && (
-          <div className="space-y-6">
-            {/* Enhanced Threat Assessment */}
-            <ThreatAssessmentCard assessment={results.summary} />
-
-            {/* Detailed Results */}
-            <Tabs defaultValue="signatures" className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="signatures">Signatures</TabsTrigger>
-                <TabsTrigger value="ml">ML Analysis</TabsTrigger>
-                <TabsTrigger value="beacons">Beacons</TabsTrigger>
-                <TabsTrigger value="behavioral">Behavioral</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="signatures">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Signature-based Detections</CardTitle>
-                    <CardDescription>
-                      Known malicious patterns detected with confidence scoring
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {results.detections.signature_detections.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Source → Destination</TableHead>
-                            <TableHead>Host</TableHead>
-                            <TableHead>Path</TableHead>
-                            <TableHead>Score</TableHead>
-                            <TableHead>Confidence</TableHead>
-                            <TableHead>Matches</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {results.detections.signature_detections.map((detection, index) => (
-                            <TableRow key={index}>
-                              <TableCell className="font-mono text-sm">
-                                {detection.session.src_ip} → {detection.session.dst_ip}
-                              </TableCell>
-                              <TableCell>{detection.session.host}</TableCell>
-                              <TableCell className="font-mono text-sm">
-                                {detection.session.path}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="destructive">{detection.score}</Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">
-                                  {(detection.confidence * 100).toFixed(0)}%
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-sm">
-                                {detection.matches.join(', ')}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <p className="text-gray-500 text-center py-8">
-                        No signature-based detections found
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="ml">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Machine Learning Classifications</CardTitle>
-                    <CardDescription>
-                      Suspicious patterns identified through enhanced feature analysis
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {results.detections.ml_classifications.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Source → Destination</TableHead>
-                            <TableHead>Host</TableHead>
-                            <TableHead>Path</TableHead>
-                            <TableHead>Score</TableHead>
-                            <TableHead>Confidence</TableHead>
-                            <TableHead>Category</TableHead>
-                            <TableHead>Reason</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {results.detections.ml_classifications.map((classification, index) => (
-                            <TableRow key={index}>
-                              <TableCell className="font-mono text-sm">
-                                {classification.session.src_ip} → {classification.session.dst_ip}
-                              </TableCell>
-                              <TableCell>{classification.session.host}</TableCell>
-                              <TableCell className="font-mono text-sm">
-                                {classification.session.path}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="secondary">
-                                  {(classification.score * 100).toFixed(0)}%
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">
-                                  {(classification.ml_confidence * 100).toFixed(0)}%
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">
-                                  {classification.category}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-sm">
-                                {classification.reason}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <p className="text-gray-500 text-center py-8">
-                        No ML classifications found
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="beacons">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Beaconing Patterns</CardTitle>
-                    <CardDescription>
-                      Regular communication patterns with enhanced strength analysis
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {results.detections.beaconing_patterns.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Host Key</TableHead>
-                            <TableHead>Sessions</TableHead>
-                            <TableHead>Interval (s)</TableHead>
-                            <TableHead>Confidence</TableHead>
-                            <TableHead>Strength</TableHead>
-                            <TableHead>Duration (h)</TableHead>
-                            <TableHead>Pattern Type</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {results.detections.beaconing_patterns.map((beacon, index) => (
-                            <TableRow key={index}>
-                              <TableCell className="font-mono text-sm">
-                                {beacon.host_key}
-                              </TableCell>
-                              <TableCell>{beacon.session_count}</TableCell>
-                              <TableCell>{beacon.mean_interval.toFixed(1)}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline">
-                                  {(beacon.confidence * 100).toFixed(0)}%
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="secondary">
-                                  {(beacon.strength * 100).toFixed(0)}%
-                                </Badge>
-                              </TableCell>
-                              <TableCell>{beacon.duration_hours.toFixed(1)}</TableCell>
-                              <TableCell>{beacon.pattern_type}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <p className="text-gray-500 text-center py-8">
-                        No beaconing patterns detected
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="behavioral">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Behavioral Anomalies</CardTitle>
-                    <CardDescription>
-                      Unusual communication behaviors with statistical analysis
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {results.detections.behavioral_anomalies.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Host Key</TableHead>
-                            <TableHead>Anomaly Type</TableHead>
-                            <TableHead>Confidence</TableHead>
-                            <TableHead>Anomaly Score</TableHead>
-                            <TableHead>Z-Score</TableHead>
-                            <TableHead>Baseline</TableHead>
-                            <TableHead>Current</TableHead>
-                            <TableHead>Persistence (h)</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {results.detections.behavioral_anomalies.map((anomaly, index) => (
-                            <TableRow key={index}>
-                              <TableCell className="font-mono text-sm">
-                                {anomaly.host_key}
-                              </TableCell>
-                              <TableCell>{anomaly.anomaly_type.replace('_', ' ')}</TableCell>
-                              <TableCell>
-                                <Badge variant="outline">
-                                  {(anomaly.confidence * 100).toFixed(0)}%
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="secondary">
-                                  {(anomaly.anomaly_score * 100).toFixed(0)}%
-                                </Badge>
-                              </TableCell>
-                              <TableCell>{anomaly.z_score.toFixed(2)}</TableCell>
-                              <TableCell>{anomaly.baseline}</TableCell>
-                              <TableCell>{anomaly.current}</TableCell>
-                              <TableCell>{anomaly.persistence_hours.toFixed(1)}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    ) : (
-                      <p className="text-gray-500 text-center py-8">
-                        No behavioral anomalies detected
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-
-            <div className="flex justify-center">
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setResults(null);
-                  setFile(null);
-                  setProgress(0);
-                }}
-              >
-                <FileText className="h-4 w-4 mr-2" />
-                Analyze Another File
-              </Button>
-            </div>
-          </div>
+        {activeTab === 'history' && (
+          <AnalysisHistory onViewResults={handleViewHistoryResults} />
         )}
       </div>
     </div>
