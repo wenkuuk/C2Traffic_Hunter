@@ -8,17 +8,44 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import ThreatAssessmentCard from "@/components/ThreatAssessmentCard";
 
-interface DetectionResult {
+interface EnhancedDetectionResult {
   analysis_timestamp: string;
   summary: {
     total_sessions: number;
-    signature_detections: number;
-    ml_classifications: number;
-    beaconing_patterns: number;
-    behavioral_anomalies: number;
     threat_score: number;
     threat_level: string;
+    confidence_score: number;
+    confidence_level: string;
+    component_scores: {
+      signature: number;
+      ml: number;
+      beaconing: number;
+      behavioral: number;
+    };
+    detection_breakdown: {
+      signature_detections: number;
+      ml_classifications: number;
+      beaconing_patterns: number;
+      behavioral_anomalies: number;
+    };
+    risk_factors: {
+      persistence: boolean;
+      lateral_movement: boolean;
+      data_exfiltration: boolean;
+      command_control: boolean;
+      privilege_escalation: boolean;
+      steganography: boolean;
+      dns_tunneling: boolean;
+    };
+    correlation_bonus: number;
+    total_detections: number;
+    assessment_metadata: {
+      active_detection_types: number;
+      analysis_version: string;
+      timestamp: string;
+    };
   };
   detections: {
     signature_detections: Array<{
@@ -33,6 +60,7 @@ interface DetectionResult {
       };
       score: number;
       matches: string[];
+      confidence: number;
     }>;
     ml_classifications: Array<{
       session: {
@@ -43,6 +71,8 @@ interface DetectionResult {
       };
       score: number;
       reason: string;
+      ml_confidence: number;
+      category: string;
     }>;
     beaconing_patterns: Array<{
       host_key: string;
@@ -50,11 +80,19 @@ interface DetectionResult {
       mean_interval: number;
       confidence: number;
       pattern_type: string;
+      strength: number;
+      duration_hours: number;
+      frequency_per_hour: number;
     }>;
     behavioral_anomalies: Array<{
       host_key: string;
       anomaly_type: string;
       confidence: number;
+      anomaly_score: number;
+      baseline: number;
+      current: number;
+      z_score: number;
+      persistence_hours: number;
     }>;
   };
 }
@@ -62,7 +100,7 @@ interface DetectionResult {
 const C2Detector = () => {
   const [file, setFile] = useState<File | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [results, setResults] = useState<DetectionResult | null>(null);
+  const [results, setResults] = useState<EnhancedDetectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
 
@@ -96,20 +134,46 @@ const C2Detector = () => {
 
     try {
       // In a real implementation, this would call the Python C2 detection script
-      // For demo purposes, we'll simulate the analysis with mock data
+      // For demo purposes, we'll simulate the analysis with enhanced mock data
       await new Promise(resolve => setTimeout(resolve, 5000));
       
-      // Mock results - in production, this would come from the actual analysis
-      const mockResults: DetectionResult = {
+      // Enhanced mock results with new assessment structure
+      const mockResults: EnhancedDetectionResult = {
         analysis_timestamp: new Date().toISOString(),
         summary: {
           total_sessions: 45,
-          signature_detections: 3,
-          ml_classifications: 2,
-          beaconing_patterns: 1,
-          behavioral_anomalies: 2,
-          threat_score: 0.7,
-          threat_level: 'HIGH'
+          threat_score: 0.78,
+          threat_level: 'HIGH',
+          confidence_score: 0.85,
+          confidence_level: 'HIGH',
+          component_scores: {
+            signature: 0.35,
+            ml: 0.28,
+            beaconing: 0.12,
+            behavioral: 0.03
+          },
+          detection_breakdown: {
+            signature_detections: 4,
+            ml_classifications: 3,
+            beaconing_patterns: 2,
+            behavioral_anomalies: 3
+          },
+          risk_factors: {
+            persistence: true,
+            lateral_movement: false,
+            data_exfiltration: true,
+            command_control: true,
+            privilege_escalation: false,
+            steganography: false,
+            dns_tunneling: false
+          },
+          correlation_bonus: 0.08,
+          total_detections: 12,
+          assessment_metadata: {
+            active_detection_types: 4,
+            analysis_version: '3.0',
+            timestamp: new Date().toISOString()
+          }
         },
         detections: {
           signature_detections: [
@@ -124,7 +188,8 @@ const C2Detector = () => {
                 timestamp: Date.now() / 1000
               },
               score: 8,
-              matches: ['Suspicious path: /gate.php', 'Malicious user agent detected']
+              matches: ['Suspicious path: /gate.php', 'Malicious user agent detected'],
+              confidence: 0.92
             }
           ],
           ml_classifications: [
@@ -136,7 +201,9 @@ const C2Detector = () => {
                 path: '/aHR0cDovL2V4YW1wbGUuY29t'
               },
               score: 0.85,
-              reason: 'High path entropy; Direct IP communication'
+              reason: 'High path entropy; Direct IP communication',
+              ml_confidence: 0.88,
+              category: 'c2_communication'
             }
           ],
           beaconing_patterns: [
@@ -145,14 +212,22 @@ const C2Detector = () => {
               session_count: 15,
               mean_interval: 300.5,
               confidence: 0.92,
-              pattern_type: 'regular_beaconing'
+              pattern_type: 'regular_beaconing',
+              strength: 0.89,
+              duration_hours: 2.5,
+              frequency_per_hour: 12
             }
           ],
           behavioral_anomalies: [
             {
               host_key: '192.168.1.100->198.51.100.25',
               anomaly_type: 'repetitive_paths',
-              confidence: 0.78
+              confidence: 0.78,
+              anomaly_score: 0.82,
+              baseline: 10,
+              current: 45,
+              z_score: 2.8,
+              persistence_hours: 3.2
             }
           ]
         }
@@ -168,36 +243,16 @@ const C2Detector = () => {
     }
   };
 
-  const getThreatLevelColor = (level: string) => {
-    switch (level) {
-      case 'CRITICAL': return 'bg-red-500';
-      case 'HIGH': return 'bg-orange-500';
-      case 'MEDIUM': return 'bg-yellow-500';
-      case 'LOW': return 'bg-green-500';
-      default: return 'bg-gray-500';
-    }
-  };
-
-  const getThreatLevelVariant = (level: string) => {
-    switch (level) {
-      case 'CRITICAL': return 'destructive' as const;
-      case 'HIGH': return 'destructive' as const;
-      case 'MEDIUM': return 'secondary' as const;
-      case 'LOW': return 'outline' as const;
-      default: return 'outline' as const;
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
             <Shield className="h-8 w-8 text-blue-600" />
-            C2 Traffic Detection System
+            Enhanced C2 Traffic Detection System
           </h1>
           <p className="text-gray-600 mt-2">
-            Advanced threat detection using signature-based analysis, machine learning, and behavioral patterns
+            Advanced threat detection with multi-layered analysis, adaptive scoring, and behavioral intelligence
           </p>
         </div>
 
@@ -209,7 +264,7 @@ const C2Detector = () => {
                 Upload PCAP File
               </CardTitle>
               <CardDescription>
-                Select a .pcap file to analyze for potential C2 traffic patterns
+                Select a .pcap file to analyze for potential C2 traffic patterns using enhanced threat assessment
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -255,7 +310,7 @@ const C2Detector = () => {
                       ) : (
                         <>
                           <Shield className="h-4 w-4 mr-2" />
-                          Start Analysis
+                          Start Enhanced Analysis
                         </>
                       )}
                     </Button>
@@ -266,7 +321,7 @@ const C2Detector = () => {
                   <div className="space-y-2">
                     <Progress value={progress} className="w-full" />
                     <p className="text-sm text-gray-600 text-center">
-                      Processing packets and running detection engines...
+                      Processing packets with enhanced threat assessment engine...
                     </p>
                   </div>
                 )}
@@ -277,59 +332,8 @@ const C2Detector = () => {
 
         {results && (
           <div className="space-y-6">
-            {/* Threat Summary */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <AlertTriangle className="h-5 w-5" />
-                    Threat Assessment
-                  </span>
-                  <Badge variant={getThreatLevelVariant(results.summary.threat_level)}>
-                    {results.summary.threat_level}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600">
-                      {results.summary.total_sessions}
-                    </div>
-                    <div className="text-sm text-gray-600">Total Sessions</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-red-600">
-                      {results.summary.signature_detections}
-                    </div>
-                    <div className="text-sm text-gray-600">Signature Hits</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-orange-600">
-                      {results.summary.ml_classifications}
-                    </div>
-                    <div className="text-sm text-gray-600">ML Classifications</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-2xl font-bold text-purple-600">
-                      {results.summary.beaconing_patterns}
-                    </div>
-                    <div className="text-sm text-gray-600">Beacon Patterns</div>
-                  </div>
-                </div>
-                
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Threat Score</span>
-                    <span>{(results.summary.threat_score * 100).toFixed(1)}%</span>
-                  </div>
-                  <Progress 
-                    value={results.summary.threat_score * 100} 
-                    className="w-full"
-                  />
-                </div>
-              </CardContent>
-            </Card>
+            {/* Enhanced Threat Assessment */}
+            <ThreatAssessmentCard assessment={results.summary} />
 
             {/* Detailed Results */}
             <Tabs defaultValue="signatures" className="w-full">
@@ -345,7 +349,7 @@ const C2Detector = () => {
                   <CardHeader>
                     <CardTitle>Signature-based Detections</CardTitle>
                     <CardDescription>
-                      Known malicious patterns detected in network traffic
+                      Known malicious patterns detected with confidence scoring
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -357,6 +361,7 @@ const C2Detector = () => {
                             <TableHead>Host</TableHead>
                             <TableHead>Path</TableHead>
                             <TableHead>Score</TableHead>
+                            <TableHead>Confidence</TableHead>
                             <TableHead>Matches</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -372,6 +377,11 @@ const C2Detector = () => {
                               </TableCell>
                               <TableCell>
                                 <Badge variant="destructive">{detection.score}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {(detection.confidence * 100).toFixed(0)}%
+                                </Badge>
                               </TableCell>
                               <TableCell className="text-sm">
                                 {detection.matches.join(', ')}
@@ -394,7 +404,7 @@ const C2Detector = () => {
                   <CardHeader>
                     <CardTitle>Machine Learning Classifications</CardTitle>
                     <CardDescription>
-                      Suspicious patterns identified through feature analysis
+                      Suspicious patterns identified through enhanced feature analysis
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -406,6 +416,8 @@ const C2Detector = () => {
                             <TableHead>Host</TableHead>
                             <TableHead>Path</TableHead>
                             <TableHead>Score</TableHead>
+                            <TableHead>Confidence</TableHead>
+                            <TableHead>Category</TableHead>
                             <TableHead>Reason</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -422,6 +434,16 @@ const C2Detector = () => {
                               <TableCell>
                                 <Badge variant="secondary">
                                   {(classification.score * 100).toFixed(0)}%
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {(classification.ml_confidence * 100).toFixed(0)}%
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">
+                                  {classification.category}
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-sm">
@@ -445,7 +467,7 @@ const C2Detector = () => {
                   <CardHeader>
                     <CardTitle>Beaconing Patterns</CardTitle>
                     <CardDescription>
-                      Regular communication patterns indicating potential C2 activity
+                      Regular communication patterns with enhanced strength analysis
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -457,6 +479,8 @@ const C2Detector = () => {
                             <TableHead>Sessions</TableHead>
                             <TableHead>Interval (s)</TableHead>
                             <TableHead>Confidence</TableHead>
+                            <TableHead>Strength</TableHead>
+                            <TableHead>Duration (h)</TableHead>
                             <TableHead>Pattern Type</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -473,6 +497,12 @@ const C2Detector = () => {
                                   {(beacon.confidence * 100).toFixed(0)}%
                                 </Badge>
                               </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">
+                                  {(beacon.strength * 100).toFixed(0)}%
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{beacon.duration_hours.toFixed(1)}</TableCell>
                               <TableCell>{beacon.pattern_type}</TableCell>
                             </TableRow>
                           ))}
@@ -492,7 +522,7 @@ const C2Detector = () => {
                   <CardHeader>
                     <CardTitle>Behavioral Anomalies</CardTitle>
                     <CardDescription>
-                      Unusual communication behaviors that may indicate malicious activity
+                      Unusual communication behaviors with statistical analysis
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -503,6 +533,11 @@ const C2Detector = () => {
                             <TableHead>Host Key</TableHead>
                             <TableHead>Anomaly Type</TableHead>
                             <TableHead>Confidence</TableHead>
+                            <TableHead>Anomaly Score</TableHead>
+                            <TableHead>Z-Score</TableHead>
+                            <TableHead>Baseline</TableHead>
+                            <TableHead>Current</TableHead>
+                            <TableHead>Persistence (h)</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -517,6 +552,15 @@ const C2Detector = () => {
                                   {(anomaly.confidence * 100).toFixed(0)}%
                                 </Badge>
                               </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">
+                                  {(anomaly.anomaly_score * 100).toFixed(0)}%
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{anomaly.z_score.toFixed(2)}</TableCell>
+                              <TableCell>{anomaly.baseline}</TableCell>
+                              <TableCell>{anomaly.current}</TableCell>
+                              <TableCell>{anomaly.persistence_hours.toFixed(1)}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
