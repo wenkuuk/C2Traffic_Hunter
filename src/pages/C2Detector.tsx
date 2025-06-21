@@ -107,6 +107,169 @@ const C2Detector = () => {
   const [activeTab, setActiveTab] = useState<'upload' | 'history'>('upload');
   const { saveToHistory, loadHistory } = useAnalysisHistory();
 
+  const generateVariedMockResults = (filename: string): EnhancedDetectionResult => {
+    // Create a simple hash from filename to ensure consistent but varied results
+    const hash = filename.split('').reduce((a, b) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0);
+    
+    const absHash = Math.abs(hash);
+    const seed = absHash % 1000;
+    
+    // Generate varied threat levels and scores based on filename
+    const threatLevels = ['LOW', 'LOW-MEDIUM', 'MEDIUM', 'MEDIUM-HIGH', 'HIGH', 'CRITICAL'];
+    const confidenceLevels = ['LOW', 'MEDIUM', 'HIGH', 'VERY_HIGH'];
+    
+    const threatIndex = seed % threatLevels.length;
+    const threatLevel = threatLevels[threatIndex];
+    const threatScore = Math.min(0.95, (threatIndex + 1) / threatLevels.length + (seed % 20) / 100);
+    
+    const confidenceIndex = (seed + 2) % confidenceLevels.length;
+    const confidenceLevel = confidenceLevels[confidenceIndex];
+    const confidenceScore = Math.min(0.95, (confidenceIndex + 1) / confidenceLevels.length + (seed % 15) / 100);
+    
+    // Generate varied detection counts
+    const sigDetections = (seed % 6);
+    const mlDetections = ((seed + 7) % 5);
+    const beaconDetections = ((seed + 3) % 4);
+    const behavioralDetections = ((seed + 11) % 5);
+    
+    const totalDetections = sigDetections + mlDetections + beaconDetections + behavioralDetections;
+    const totalSessions = Math.max(10, seed % 100 + 20);
+    
+    // Generate varied component scores
+    const componentScores = {
+      signature: Math.min(0.4, sigDetections * 0.08 + (seed % 10) / 100),
+      ml: Math.min(0.35, mlDetections * 0.07 + (seed % 12) / 100),
+      beaconing: Math.min(0.25, beaconDetections * 0.06 + (seed % 8) / 100),
+      behavioral: Math.min(0.2, behavioralDetections * 0.05 + (seed % 6) / 100)
+    };
+    
+    // Generate varied risk factors
+    const riskFactors = {
+      persistence: (seed % 3) === 0,
+      lateral_movement: (seed % 5) === 0,
+      data_exfiltration: (seed % 4) === 0,
+      command_control: beaconDetections > 0,
+      privilege_escalation: (seed % 7) === 0,
+      steganography: (seed % 9) === 0,
+      dns_tunneling: (seed % 8) === 0
+    };
+    
+    // Generate sample IP addresses based on seed
+    const generateIP = (offset: number) => {
+      const base = (seed + offset) % 255;
+      return `192.168.${Math.floor(base / 10)}.${base % 10 + 1}`;
+    };
+    
+    const generateExternalIP = (offset: number) => {
+      const base = (seed + offset) % 255;
+      return `${203 + (base % 50)}.${base % 255}.${(base + offset) % 255}.${(base * 2) % 255}`;
+    };
+    
+    // Generate malicious domains based on seed
+    const domains = [
+      'suspicious-domain.com',
+      'malicious-site.net',
+      'c2-server.org',
+      'backdoor-host.io',
+      'evil-command.xyz'
+    ];
+    const selectedDomain = domains[seed % domains.length];
+    
+    return {
+      analysis_timestamp: new Date().toISOString(),
+      summary: {
+        total_sessions: totalSessions,
+        threat_score: threatScore,
+        threat_level: threatLevel,
+        confidence_score: confidenceScore,
+        confidence_level: confidenceLevel,
+        component_scores: componentScores,
+        detection_breakdown: {
+          signature_detections: sigDetections,
+          ml_classifications: mlDetections,
+          beaconing_patterns: beaconDetections,
+          behavioral_anomalies: behavioralDetections
+        },
+        risk_factors: riskFactors,
+        correlation_bonus: Math.min(0.15, totalDetections * 0.01),
+        total_detections: totalDetections,
+        assessment_metadata: {
+          active_detection_types: [sigDetections, mlDetections, beaconDetections, behavioralDetections].filter(x => x > 0).length,
+          analysis_version: '3.0',
+          timestamp: new Date().toISOString()
+        }
+      },
+      detections: {
+        signature_detections: Array.from({ length: sigDetections }, (_, i) => ({
+          session: {
+            src_ip: generateIP(i),
+            dst_ip: generateExternalIP(i + 10),
+            host: selectedDomain,
+            path: [`/gate.php`, `/admin.php`, `/upload.php`, `/cmd.php`][i % 4],
+            method: ['POST', 'GET'][i % 2],
+            user_agent: [
+              'Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)',
+              'curl/7.68.0',
+              'python-requests/2.25.1'
+            ][i % 3],
+            timestamp: Date.now() / 1000 - (i * 300)
+          },
+          score: Math.min(10, 6 + (seed + i) % 4),
+          matches: [
+            'Suspicious path detected',
+            'Malicious user agent',
+            'Known C2 signature'
+          ].slice(0, ((seed + i) % 3) + 1),
+          confidence: Math.min(0.95, 0.7 + ((seed + i) % 25) / 100)
+        })),
+        ml_classifications: Array.from({ length: mlDetections }, (_, i) => ({
+          session: {
+            src_ip: generateIP(i + 5),
+            dst_ip: generateExternalIP(i + 15),
+            host: generateExternalIP(i + 15),
+            path: `/data${i + 1}`
+          },
+          score: Math.min(0.95, 0.6 + ((seed + i) % 30) / 100),
+          reason: [
+            'High path entropy; Direct IP communication',
+            'Unusual payload patterns detected',
+            'Suspicious timing intervals'
+          ][i % 3],
+          ml_confidence: Math.min(0.95, 0.75 + ((seed + i) % 20) / 100),
+          category: ['c2_communication', 'data_exfiltration', 'lateral_movement'][i % 3]
+        })),
+        beaconing_patterns: Array.from({ length: beaconDetections }, (_, i) => ({
+          host_key: `${generateIP(i + 2)}->${generateExternalIP(i + 20)}:${selectedDomain}`,
+          session_count: 10 + ((seed + i) % 15),
+          mean_interval: 250 + ((seed + i) % 200),
+          confidence: Math.min(0.95, 0.8 + ((seed + i) % 15) / 100),
+          pattern_type: ['regular_beaconing', 'jittered_beaconing'][i % 2],
+          strength: Math.min(0.95, 0.7 + ((seed + i) % 20) / 100),
+          duration_hours: 1.5 + ((seed + i) % 10) / 2,
+          frequency_per_hour: 8 + ((seed + i) % 12)
+        })),
+        behavioral_anomalies: Array.from({ length: behavioralDetections }, (_, i) => ({
+          host_key: `${generateIP(i + 3)}->${generateExternalIP(i + 25)}`,
+          anomaly_type: [
+            'repetitive_paths',
+            'unusual_timing',
+            'abnormal_payload_sizes',
+            'suspicious_user_agents'
+          ][i % 4],
+          confidence: Math.min(0.95, 0.65 + ((seed + i) % 25) / 100),
+          anomaly_score: Math.min(0.95, 0.7 + ((seed + i) % 20) / 100),
+          baseline: 8 + ((seed + i) % 12),
+          current: 35 + ((seed + i) % 25),
+          z_score: 2.1 + ((seed + i) % 15) / 10,
+          persistence_hours: 2.0 + ((seed + i) % 8) / 2
+        }))
+      }
+    };
+  };
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
     if (selectedFile && selectedFile.name.endsWith('.pcap')) {
@@ -137,104 +300,11 @@ const C2Detector = () => {
 
     try {
       // In a real implementation, this would call the Python C2 detection script
-      // For demo purposes, we'll simulate the analysis with enhanced mock data
+      // For demo purposes, we'll simulate the analysis with varied mock data
       await new Promise(resolve => setTimeout(resolve, 5000));
       
-      // Enhanced mock results with new assessment structure
-      const mockResults: EnhancedDetectionResult = {
-        analysis_timestamp: new Date().toISOString(),
-        summary: {
-          total_sessions: 45,
-          threat_score: 0.78,
-          threat_level: 'HIGH',
-          confidence_score: 0.85,
-          confidence_level: 'HIGH',
-          component_scores: {
-            signature: 0.35,
-            ml: 0.28,
-            beaconing: 0.12,
-            behavioral: 0.03
-          },
-          detection_breakdown: {
-            signature_detections: 4,
-            ml_classifications: 3,
-            beaconing_patterns: 2,
-            behavioral_anomalies: 3
-          },
-          risk_factors: {
-            persistence: true,
-            lateral_movement: false,
-            data_exfiltration: true,
-            command_control: true,
-            privilege_escalation: false,
-            steganography: false,
-            dns_tunneling: false
-          },
-          correlation_bonus: 0.08,
-          total_detections: 12,
-          assessment_metadata: {
-            active_detection_types: 4,
-            analysis_version: '3.0',
-            timestamp: new Date().toISOString()
-          }
-        },
-        detections: {
-          signature_detections: [
-            {
-              session: {
-                src_ip: '192.168.1.100',
-                dst_ip: '203.0.113.50',
-                host: 'malicious-domain.com',
-                path: '/gate.php',
-                method: 'POST',
-                user_agent: 'Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)',
-                timestamp: Date.now() / 1000
-              },
-              score: 8,
-              matches: ['Suspicious path: /gate.php', 'Malicious user agent detected'],
-              confidence: 0.92
-            }
-          ],
-          ml_classifications: [
-            {
-              session: {
-                src_ip: '192.168.1.100',
-                dst_ip: '198.51.100.25',
-                host: '198.51.100.25',
-                path: '/aHR0cDovL2V4YW1wbGUuY29t'
-              },
-              score: 0.85,
-              reason: 'High path entropy; Direct IP communication',
-              ml_confidence: 0.88,
-              category: 'c2_communication'
-            }
-          ],
-          beaconing_patterns: [
-            {
-              host_key: '192.168.1.100->203.0.113.50:malicious-domain.com',
-              session_count: 15,
-              mean_interval: 300.5,
-              confidence: 0.92,
-              pattern_type: 'regular_beaconing',
-              strength: 0.89,
-              duration_hours: 2.5,
-              frequency_per_hour: 12
-            }
-          ],
-          behavioral_anomalies: [
-            {
-              host_key: '192.168.1.100->198.51.100.25',
-              anomaly_type: 'repetitive_paths',
-              confidence: 0.78,
-              anomaly_score: 0.82,
-              baseline: 10,
-              current: 45,
-              z_score: 2.8,
-              persistence_hours: 3.2
-            }
-          ]
-        }
-      };
+      // Generate varied results based on filename
+      const mockResults = generateVariedMockResults(file.name);
 
       clearInterval(progressInterval);
       setProgress(100);
