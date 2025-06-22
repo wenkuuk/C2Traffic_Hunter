@@ -1,396 +1,306 @@
 
 #!/usr/bin/env python3
 """
-Enhanced Statistical Analysis module with advanced C2 detection techniques
+Enhanced Statistical Analysis with Advanced C2 Detection Techniques
 """
 
-import math
 import statistics
+import math
 import logging
-from typing import Dict, List, Optional, Tuple
-from collections import defaultdict
-from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
 class EnhancedStatisticalAnalyzer:
-    """Enhanced statistical analyzer with advanced C2 detection capabilities"""
+    """Enhanced statistical analyzer with advanced C2 detection techniques"""
     
     def __init__(self):
-        # Configuration parameters
-        self.cert_size_threshold = 1200
-        self.cert_validity_days = 365
-        self.min_packets_for_analysis = 3
-        self.periodicity_threshold = 0.7
         self.entropy_threshold = 2.0
-        
+        self.periodicity_threshold = 0.7
+        self.regularity_threshold = 0.8
+        self.uniformity_variance_threshold = 100
+    
     def calculate_entropy(self, data: List[float]) -> float:
-        """Calculate Shannon entropy of data"""
+        """Calculate Shannon entropy of data with improved algorithm"""
         if not data or len(data) <= 1:
             return 0.0
         
         try:
-            # Create frequency distribution
-            unique_values = list(set(data))
-            if len(unique_values) <= 1:
-                return 0.0
+            # Create frequency distribution with binning for continuous data
+            if len(set(data)) == len(data):  # All unique values
+                # Bin continuous data for entropy calculation
+                min_val, max_val = min(data), max(data)
+                if max_val == min_val:
+                    return 0.0
+                
+                num_bins = min(10, int(math.sqrt(len(data))))
+                bin_size = (max_val - min_val) / num_bins
+                bins = [int((x - min_val) / bin_size) for x in data]
+                bins = [min(b, num_bins - 1) for b in bins]  # Ensure within bounds
+                data_for_entropy = bins
+            else:
+                data_for_entropy = data
             
-            total = len(data)
+            # Calculate entropy
+            counter = Counter(data_for_entropy)
+            total = len(data_for_entropy)
             entropy = 0.0
             
-            for value in unique_values:
-                frequency = data.count(value)
-                probability = frequency / total
+            for count in counter.values():
+                probability = count / total
                 if probability > 0:
                     entropy -= probability * math.log2(probability)
             
             return entropy
+            
         except Exception as e:
             logger.warning(f"Entropy calculation failed: {e}")
             return 0.0
     
     def detect_periodicity(self, times: List[float]) -> float:
-        """Detect periodicity in inter-arrival times using autocorrelation"""
+        """Detect periodicity in inter-arrival times with autocorrelation"""
         if len(times) < 3:
             return 0.0
         
         try:
             # Calculate autocorrelation at lag 1
             mean_time = statistics.mean(times)
+            
+            # Handle case where all values are the same
+            variance = sum((t - mean_time) ** 2 for t in times)
+            if variance == 0:
+                return 1.0  # Perfect regularity
+            
             numerator = sum((times[i] - mean_time) * (times[i+1] - mean_time) 
                           for i in range(len(times)-1))
-            denominator = sum((t - mean_time) ** 2 for t in times)
             
-            if denominator == 0:
-                return 0.0
-            
-            autocorr = numerator / denominator
+            autocorr = numerator / variance
             return abs(autocorr)  # Return absolute value as periodicity measure
+            
         except Exception as e:
             logger.warning(f"Periodicity detection failed: {e}")
             return 0.0
     
-    def analyze_packet_timing_patterns(self, timestamps: List[float]) -> Dict:
-        """Enhanced packet timing analysis with multiple techniques"""
-        if len(timestamps) < 3:
-            return {'is_regular': False, 'confidence': 0.0}
-        
-        intervals = []
-        for i in range(1, len(timestamps)):
-            intervals.append(timestamps[i] - timestamps[i-1])
-        
-        if not intervals:
-            return {'is_regular': False, 'confidence': 0.0}
-        
-        # Basic statistics
-        avg_interval = statistics.mean(intervals)
-        variance = statistics.variance(intervals) if len(intervals) > 1 else 0
-        std_dev = math.sqrt(variance)
-        
-        # Coefficient of variation for regularity detection
-        coefficient_of_variation = std_dev / avg_interval if avg_interval > 0 else 0
-        
-        # Periodicity detection
-        periodicity = self.detect_periodicity(intervals)
-        
-        # Jitter calculation
-        jitter = std_dev
-        jitter_score = min(1.0, jitter / 5.0) if jitter > 2.0 else 0.0
-        
-        # Enhanced regularity detection
-        regularity_indicators = 0
-        confidence_factors = []
-        
-        # Low coefficient of variation indicates regular beaconing
-        if coefficient_of_variation < 0.3:
-            regularity_indicators += 1
-            confidence_factors.append(1 - coefficient_of_variation)
-        
-        # High periodicity indicates beaconing
-        if periodicity > self.periodicity_threshold:
-            regularity_indicators += 1
-            confidence_factors.append(periodicity)
-        
-        # Very low variance in timing
-        if variance < 0.1 and len(intervals) > 5:
-            regularity_indicators += 1
-            confidence_factors.append(0.8)
-        
-        # Calculate overall confidence
-        confidence = statistics.mean(confidence_factors) if confidence_factors else 0.0
-        
-        # Enhanced beaconing detection
-        is_regular = (regularity_indicators >= 2 and len(timestamps) > 5) or \
-                    (coefficient_of_variation < 0.2 and periodicity > 0.8)
-        
-        return {
-            'host': f"enhanced_analysis_{len(timestamps)}_packets",
-            'request_count': len(timestamps),
-            'avg_interval': avg_interval,
-            'std_deviation': std_dev,
-            'coefficient_of_variation': coefficient_of_variation,
-            'periodicity': periodicity,
-            'jitter': jitter,
-            'jitter_score': jitter_score,
-            'variance': variance,
-            'regularity_indicators': regularity_indicators,
-            'is_regular': is_regular,
-            'confidence': confidence,
-            'duration': timestamps[-1] - timestamps[0] if timestamps else 0,
-            'strength': confidence * (1 + regularity_indicators * 0.2)
-        }
-    
-    def analyze_packet_sizes(self, packet_sizes: List[int]) -> Dict:
-        """Enhanced packet size analysis"""
+    def analyze_packet_uniformity(self, packet_sizes: List[float]) -> Dict[str, float]:
+        """Analyze packet size uniformity with advanced metrics"""
         if not packet_sizes:
             return {}
         
-        features = {}
-        suspicion_score = 0.0
+        analysis = {}
         
-        # Basic statistics
-        features['packet_count'] = len(packet_sizes)
-        features['avg_packet_size'] = statistics.mean(packet_sizes)
-        features['max_packet_size'] = max(packet_sizes)
-        features['min_packet_size'] = min(packet_sizes)
-        features['median_packet_size'] = statistics.median(packet_sizes)
-        
-        # Advanced analysis
-        packet_entropy = self.calculate_entropy([float(x) for x in packet_sizes])
-        features['packet_entropy'] = packet_entropy
-        
-        # Low entropy (uniform sizes) is suspicious for C2
-        if packet_entropy < self.entropy_threshold:
-            entropy_factor = (self.entropy_threshold - packet_entropy) / self.entropy_threshold
-            suspicion_score += 0.3 * entropy_factor
-            features['low_entropy_score'] = entropy_factor
-        
-        # Small average packet sizes
-        avg_size = statistics.mean(packet_sizes)
-        if avg_size < 200:
-            size_factor = (200 - avg_size) / 200
-            suspicion_score += 0.25 * size_factor
-            features['small_packets_score'] = size_factor
-        
-        # All packets being consistently small
-        if max(packet_sizes) < 500:
-            suspicion_score += 0.2
-            features['all_small_packets'] = 1.0
-        
-        # Variance analysis for uniformity detection
-        if len(packet_sizes) > 1:
-            packet_variance = statistics.variance(packet_sizes)
-            features['packet_variance'] = packet_variance
+        try:
+            # Basic statistics
+            analysis['avg_packet_size'] = statistics.mean(packet_sizes)
+            analysis['max_packet_size'] = max(packet_sizes)
+            analysis['min_packet_size'] = min(packet_sizes)
+            analysis['packet_count'] = len(packet_sizes)
             
-            # Very uniform packet sizes are suspicious
-            if packet_variance < 100:
-                suspicion_score += 0.15
-                features['uniform_packets'] = 1.0
+            # Variance and standard deviation
+            if len(packet_sizes) > 1:
+                analysis['packet_variance'] = statistics.variance(packet_sizes)
+                analysis['packet_std'] = statistics.stdev(packet_sizes)
+                
+                # Coefficient of variation
+                if analysis['avg_packet_size'] > 0:
+                    analysis['coefficient_of_variation'] = analysis['packet_std'] / analysis['avg_packet_size']
+            
+            # Entropy analysis
+            analysis['packet_entropy'] = self.calculate_entropy(packet_sizes)
+            
+            # Uniformity indicators
+            unique_sizes = len(set(packet_sizes))
+            analysis['unique_size_ratio'] = unique_sizes / len(packet_sizes)
+            
+            # Small packet analysis
+            small_packets = sum(1 for size in packet_sizes if size < 200)
+            analysis['small_packet_ratio'] = small_packets / len(packet_sizes)
+            
+            # Suspicious uniformity flags
+            analysis['very_uniform'] = (
+                analysis.get('packet_variance', float('inf')) < self.uniformity_variance_threshold
+            )
+            analysis['low_entropy'] = (
+                analysis.get('packet_entropy', float('inf')) < self.entropy_threshold
+            )
+            analysis['all_small_packets'] = max(packet_sizes) < 500
+            
+        except Exception as e:
+            logger.error(f"Packet uniformity analysis failed: {e}")
         
-        features['suspicion_score'] = min(1.0, suspicion_score)
-        return features
+        return analysis
     
-    def analyze_certificate_features(self, cert_data: Dict) -> Dict:
-        """Analyze certificate features for C2 indicators"""
-        features = {}
-        suspicion_score = 0.0
+    def analyze_timing_patterns(self, inter_arrival_times: List[float]) -> Dict[str, float]:
+        """Analyze timing patterns with advanced statistical methods"""
+        if not inter_arrival_times or len(inter_arrival_times) < 2:
+            return {}
         
-        if not cert_data:
-            return {'suspicion_score': 0.0}
+        analysis = {}
         
-        # Certificate size analysis
-        if 'size' in cert_data and cert_data['size']:
-            cert_size = float(cert_data['size'])
-            features['cert_size'] = cert_size
+        try:
+            # Basic timing statistics
+            analysis['avg_inter_arrival'] = statistics.mean(inter_arrival_times)
+            analysis['max_inter_arrival'] = max(inter_arrival_times)
+            analysis['min_inter_arrival'] = min(inter_arrival_times)
             
-            # Small certificates are suspicious
-            if cert_size < self.cert_size_threshold:
-                size_factor = (self.cert_size_threshold - cert_size) / self.cert_size_threshold
-                suspicion_score += 0.4 * size_factor
-                features['size_suspicion'] = size_factor
-        
-        # Self-signed certificate analysis
-        if 'self_signed' in cert_data:
-            is_self_signed = bool(cert_data['self_signed'])
-            features['self_signed'] = float(is_self_signed)
+            # Jitter analysis
+            if len(inter_arrival_times) > 1:
+                analysis['jitter'] = statistics.stdev(inter_arrival_times)
+                analysis['time_variance'] = statistics.variance(inter_arrival_times)
+                
+                # Coefficient of variation for timing
+                if analysis['avg_inter_arrival'] > 0:
+                    analysis['timing_cov'] = analysis['jitter'] / analysis['avg_inter_arrival']
             
-            if is_self_signed:
-                suspicion_score += 0.4
-        
-        # Validity period analysis
-        if 'validity_days' in cert_data and cert_data['validity_days']:
-            validity_days = float(cert_data['validity_days'])
-            features['validity_days'] = validity_days
+            # Periodicity detection
+            analysis['periodicity'] = self.detect_periodicity(inter_arrival_times)
             
-            # Short validity periods are suspicious
-            if validity_days < self.cert_validity_days:
-                validity_factor = (self.cert_validity_days - validity_days) / self.cert_validity_days
-                suspicion_score += 0.3 * validity_factor
-                features['validity_suspicion'] = validity_factor
+            # Timing entropy
+            analysis['timing_entropy'] = self.calculate_entropy(inter_arrival_times)
             
-            # Extremely long validity periods are also suspicious
-            if validity_days > 3650:  # > 10 years
-                suspicion_score += 0.2
-                features['excessive_validity'] = 1.0
-        
-        features['suspicion_score'] = min(1.0, suspicion_score)
-        return features
-    
-    def calculate_enhanced_confidence(self, detection_scores: Dict, feature_count: int) -> float:
-        """Calculate enhanced confidence based on multiple factors"""
-        confidence = 0.5  # Base confidence
-        
-        # Increase confidence based on number of available features
-        confidence += min(0.3, feature_count * 0.03)
-        
-        # Check score consistency across detection methods
-        scores = [v for v in detection_scores.values() if isinstance(v, (int, float))]
-        if len(scores) >= 2:
-            score_variance = statistics.variance(scores)
-            # Low variance means consistent detection across methods
-            if score_variance < 0.1:
-                confidence += 0.2
-            # High variance reduces confidence
-            elif score_variance > 0.5:
-                confidence -= 0.15
-        
-        # Boost confidence if multiple high scores
-        high_scores = [s for s in scores if s > 0.7]
-        if len(high_scores) >= 2:
-            confidence += 0.15
-        
-        return max(0.1, min(1.0, confidence))
-    
-    def analyze_beaconing(self, host: str, timestamps: List[float]) -> Dict:
-        """Enhanced beaconing analysis using multiple techniques"""
-        return self.analyze_packet_timing_patterns(timestamps)
-    
-    def analyze_host_behavior(self, host_key: str, stats: Dict) -> List[str]:
-        """Enhanced host behavior analysis with more sophisticated detection"""
-        suspicion_indicators = []
-        
-        # Enhanced user agent analysis
-        user_agents = stats.get('user_agents', set())
-        if len(user_agents) > 3:
-            suspicion_indicators.append(f"Multiple user agents: {len(user_agents)} (potential evasion)")
-        elif len(user_agents) == 1 and stats.get('request_count', 0) > 50:
-            suspicion_indicators.append("Single user agent with high request count (automated behavior)")
-        
-        # Enhanced request frequency analysis
-        request_count = stats.get('request_count', 0)
-        if request_count > 100:
-            suspicion_indicators.append(f"High request frequency: {request_count}")
-        
-        # Path pattern analysis with entropy
-        paths = stats.get('paths', [])
-        if paths:
-            unique_paths = set(paths)
-            path_entropy = self.calculate_entropy([float(hash(p) % 1000) for p in paths])
-            
-            # Low path diversity
-            if len(unique_paths) < len(paths) * 0.1 and len(paths) > 10:
-                suspicion_indicators.append("Repetitive path patterns (low diversity)")
-            
-            # Low path entropy
-            if path_entropy < 3.0 and len(paths) > 20:
-                suspicion_indicators.append(f"Low path entropy: {path_entropy:.2f} (predictable patterns)")
-        
-        # Enhanced timing analysis
-        intervals = stats.get('intervals', [])
-        if len(intervals) > 5:
-            timing_analysis = self.analyze_packet_timing_patterns(
-                [sum(intervals[:i+1]) for i in range(len(intervals))]
+            # Regularity analysis
+            analysis['very_regular'] = (
+                analysis.get('time_variance', float('inf')) < 0.1
+            )
+            analysis['high_periodicity'] = (
+                analysis.get('periodicity', 0) > self.periodicity_threshold
+            )
+            analysis['high_jitter'] = (
+                analysis.get('jitter', 0) > 2.0
             )
             
-            if timing_analysis.get('is_regular', False):
-                confidence = timing_analysis.get('confidence', 0)
-                suspicion_indicators.append(
-                    f"Regular timing pattern detected (confidence: {confidence:.2f})"
-                )
-            
-            if timing_analysis.get('jitter_score', 0) > 0.5:
-                suspicion_indicators.append("High jitter detected (potential randomization)")
+        except Exception as e:
+            logger.error(f"Timing pattern analysis failed: {e}")
         
-        # Response size analysis
-        response_sizes = stats.get('response_sizes', [])
-        if response_sizes:
-            size_features = self.analyze_packet_sizes(response_sizes)
-            if size_features.get('suspicion_score', 0) > 0.3:
-                suspicion_indicators.append(
-                    f"Suspicious response size patterns (score: {size_features['suspicion_score']:.2f})"
-                )
-        
-        return suspicion_indicators
+        return analysis
     
-    def calculate_suspicion_score(self, http_data: Dict, dst_port: int, pattern_detector) -> tuple:
-        """Enhanced suspicion scoring with multiple detection techniques"""
-        suspicion_score = 0
-        reasons = []
+    def analyze_certificate_features(self, cert: Dict) -> Dict[str, float]:
+        """Analyze certificate features with enhanced detection"""
+        analysis = {}
         
-        user_agent = http_data.get('user_agent', '')
-        path = http_data.get('path', '')
+        try:
+            # Size analysis
+            if 'size' in cert and cert['size'] is not None:
+                cert_size = float(cert['size'])
+                analysis['cert_size'] = cert_size
+                
+                # Small certificate suspicion (< 1200 bytes)
+                if cert_size < 1200:
+                    analysis['small_cert_factor'] = max(0, (1200 - cert_size) / 1200)
+                
+                # Very small certificates are highly suspicious
+                if cert_size < 800:
+                    analysis['very_small_cert'] = 1.0
+            
+            # Self-signed analysis
+            if 'self_signed' in cert:
+                analysis['self_signed'] = float(bool(cert['self_signed']))
+            
+            # Validity period analysis
+            if 'validity_days' in cert and cert['validity_days'] is not None:
+                validity_days = float(cert['validity_days'])
+                analysis['validity_days'] = validity_days
+                
+                # Short validity suspicion (< 365 days)
+                if validity_days < 365:
+                    analysis['short_validity_factor'] = max(0, (365 - validity_days) / 365)
+                
+                # Very short validity is highly suspicious
+                if validity_days < 90:
+                    analysis['very_short_validity'] = 1.0
+                
+                # Extremely long validity is also suspicious (> 10 years)
+                if validity_days > 3650:
+                    analysis['excessive_validity'] = 1.0
+            
+        except Exception as e:
+            logger.error(f"Certificate analysis failed: {e}")
         
-        # Enhanced user agent analysis
-        if pattern_detector.is_suspicious_user_agent(user_agent):
-            suspicion_score += 3
-            reasons.append(f"Suspicious user agent: {user_agent}")
+        return analysis
+    
+    def calculate_behavioral_score(self, packet_analysis: Dict[str, float], 
+                                 timing_analysis: Dict[str, float],
+                                 cert_analysis: Dict[str, float]) -> float:
+        """Calculate comprehensive behavioral score"""
+        score = 0.0
         
-        # Enhanced URL pattern analysis
-        if pattern_detector.is_suspicious_url(path):
-            suspicion_score += 2
-            reasons.append(f"Suspicious URL pattern: {path}")
+        try:
+            # Packet-based scoring
+            if packet_analysis.get('low_entropy', False):
+                entropy_factor = max(0, (self.entropy_threshold - packet_analysis.get('packet_entropy', 2.0)) / self.entropy_threshold)
+                score += 0.2 * entropy_factor
+            
+            if packet_analysis.get('very_uniform', False):
+                score += 0.15
+            
+            if packet_analysis.get('all_small_packets', False):
+                score += 0.15
+            
+            small_packet_ratio = packet_analysis.get('small_packet_ratio', 0)
+            if small_packet_ratio > 0.8:
+                score += 0.1 * small_packet_ratio
+            
+            # Timing-based scoring
+            if timing_analysis.get('high_periodicity', False):
+                periodicity = timing_analysis.get('periodicity', 0)
+                score += 0.2 * periodicity
+            
+            if timing_analysis.get('very_regular', False):
+                score += 0.1
+            
+            if timing_analysis.get('high_jitter', False):
+                jitter_factor = min(1.0, timing_analysis.get('jitter', 0) / 5.0)
+                score += 0.1 * jitter_factor
+            
+            # Certificate-based scoring
+            if cert_analysis.get('self_signed', 0) > 0:
+                score += 0.3
+            
+            if 'small_cert_factor' in cert_analysis:
+                score += 0.2 * cert_analysis['small_cert_factor']
+            
+            if 'short_validity_factor' in cert_analysis:
+                score += 0.15 * cert_analysis['short_validity_factor']
+            
+            if cert_analysis.get('very_small_cert', 0) > 0:
+                score += 0.1
+            
+            if cert_analysis.get('very_short_validity', 0) > 0:
+                score += 0.1
+            
+        except Exception as e:
+            logger.error(f"Behavioral score calculation failed: {e}")
         
-        # Enhanced entropy analysis
-        path_entropy = pattern_detector.calculate_entropy(path)
-        if path_entropy > 4.5:
-            suspicion_score += 2
-            reasons.append(f"High entropy in path: {path_entropy:.2f}")
-        elif path_entropy < 1.0 and len(path) > 10:
-            suspicion_score += 1
-            reasons.append(f"Very low entropy in path: {path_entropy:.2f} (potential pattern)")
+        return min(1.0, score)
+    
+    def calculate_confidence_score(self, cert_score: float, behavioral_score: float,
+                                 available_features: int, score_consistency: float) -> float:
+        """Calculate enhanced confidence score"""
+        confidence = 0.5  # Base confidence
         
-        # Certificate analysis if available
-        cert_data = http_data.get('certificate', {})
-        if cert_data:
-            cert_features = self.analyze_certificate_features(cert_data)
-            cert_suspicion = cert_features.get('suspicion_score', 0)
-            if cert_suspicion > 0.3:
-                suspicion_score += int(cert_suspicion * 3)
-                reasons.append(f"Suspicious certificate features (score: {cert_suspicion:.2f})")
+        try:
+            # Feature completeness bonus
+            feature_bonus = min(0.3, available_features * 0.02)
+            confidence += feature_bonus
+            
+            # Score consistency bonus
+            if cert_score > 0.6 and behavioral_score > 0.6:
+                confidence += 0.2
+            
+            # Penalize inconsistent scores
+            score_diff = abs(cert_score - behavioral_score)
+            if score_diff > 0.5:
+                confidence -= 0.15
+            elif score_diff > 0.3:
+                confidence -= 0.1
+            
+            # High score bonus
+            combined_score = (cert_score + behavioral_score) / 2
+            if combined_score > 0.8:
+                confidence += 0.1
+            
+        except Exception as e:
+            logger.error(f"Confidence calculation failed: {e}")
         
-        # Enhanced header analysis
-        headers = http_data.get('headers', {})
-        suspicious_header_count = 0
-        for header, value in headers.items():
-            if pattern_detector.has_suspicious_header(header):
-                suspicious_header_count += 1
-                reasons.append(f"Suspicious header: {header}")
-        
-        if suspicious_header_count > 2:
-            suspicion_score += suspicious_header_count
-        
-        # Enhanced payload analysis
-        full_payload = http_data.get('full_payload', '')
-        if pattern_detector.has_base64_content(full_payload):
-            suspicion_score += 1
-            reasons.append("Base64-like content detected")
-        
-        # Payload entropy analysis
-        if full_payload:
-            payload_entropy = self.calculate_entropy([float(ord(c)) for c in full_payload[:1000]])
-            if payload_entropy > 7.0:
-                suspicion_score += 2
-                reasons.append(f"High payload entropy: {payload_entropy:.2f} (potential encryption)")
-        
-        # Enhanced port analysis
-        if dst_port not in [80, 443, 8080, 8443]:
-            suspicion_score += 1
-            reasons.append(f"Non-standard HTTP port: {dst_port}")
-        
-        # File extension analysis
-        if pattern_detector.has_suspicious_file_extension(path):
-            suspicion_score += 1
-            reasons.append("Suspicious file extension detected")
-        
-        return suspicion_score, reasons
+        return max(0.1, min(1.0, confidence))
 

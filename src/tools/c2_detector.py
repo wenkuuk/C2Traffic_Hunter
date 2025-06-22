@@ -24,6 +24,7 @@ from behavioral_analysis import BehavioralAnalyzer
 from packet_analyzer import PacketAnalyzer
 from enhanced_threat_assessor import EnhancedThreatAssessor
 from enhanced_reporter import EnhancedReporter
+from enhanced_statistical_analyzer import EnhancedStatisticalAnalyzer
 
 
 class AdvancedC2Detector:
@@ -36,6 +37,7 @@ class AdvancedC2Detector:
         self.ml_extractor = MLFeatureExtractor()
         self.behavioral_analyzer = BehavioralAnalyzer()
         self.enhanced_threat_assessor = EnhancedThreatAssessor()
+        self.enhanced_statistical_analyzer = EnhancedStatisticalAnalyzer()
         
         # Initialize packet analyzer with dependencies
         self.packet_analyzer = PacketAnalyzer(
@@ -46,6 +48,7 @@ class AdvancedC2Detector:
             self.ml_extractor
         )
         
+        # ... keep existing code (results and host_stats initialization)
         self.results = {
             'suspicious_hosts': defaultdict(list),
             'beacon_candidates': [],
@@ -75,64 +78,114 @@ class AdvancedC2Detector:
         )
 
     def finalize_analysis(self):
-        """Enhanced final analysis with behavioral patterns"""
+        """Enhanced final analysis with behavioral patterns and advanced statistics"""
         # Cross-reference detections by host for correlation analysis
         host_detection_map = {}
         
-        # Enhanced beaconing analysis with correlation
+        # Enhanced beaconing analysis with advanced statistical methods
         for host_key, stats in self.host_stats.items():
             if len(stats['timestamps']) >= 3:
-                beacon_analysis = self.statistical_analyzer.analyze_beaconing(host_key, stats['timestamps'])
-                if beacon_analysis and beacon_analysis.get('is_regular'):
-                    # Enhanced correlation tracking
-                    correlated_sigs = [d for d in self.results.get('signature_detections', []) 
-                                     if d.get('session_data', {}).get('host', '') == host_key]
-                    correlated_ml = [d for d in self.results.get('ml_classifications', []) 
-                                   if d.get('session_data', {}).get('host', '') == host_key]
+                # Use enhanced statistical analyzer for better beaconing detection
+                intervals = []
+                timestamps = sorted(stats['timestamps'])
+                for i in range(1, len(timestamps)):
+                    intervals.append(timestamps[i] - timestamps[i-1])
+                
+                if intervals:
+                    # Advanced timing analysis
+                    timing_analysis = self.enhanced_statistical_analyzer.analyze_timing_patterns(intervals)
                     
-                    beacon_analysis['correlated_detections'] = len(correlated_sigs) + len(correlated_ml)
-                    beacon_analysis['correlation_types'] = []
-                    if correlated_sigs:
-                        beacon_analysis['correlation_types'].append('signature')
-                    if correlated_ml:
-                        beacon_analysis['correlation_types'].append('ml')
+                    # Create enhanced beacon analysis
+                    beacon_analysis = {
+                        'host_key': host_key,
+                        'timestamps': timestamps,
+                        'intervals': intervals,
+                        'duration': timestamps[-1] - timestamps[0] if len(timestamps) > 1 else 0,
+                        **timing_analysis
+                    }
                     
-                    # Calculate pattern strength using enhanced assessor
-                    beacon_analysis['strength'] = self.enhanced_threat_assessor.pattern_analyzer.calculate_beaconing_strength(beacon_analysis)
+                    # Determine if this is regular beaconing
+                    is_regular = (
+                        timing_analysis.get('high_periodicity', False) or
+                        timing_analysis.get('very_regular', False) or
+                        (timing_analysis.get('timing_cov', 1.0) < 0.3 and len(intervals) >= 5)
+                    )
                     
-                    self.results['beacon_candidates'].append(beacon_analysis)
+                    beacon_analysis['is_regular'] = is_regular
                     
-                    # Track host detections
-                    if host_key not in host_detection_map:
-                        host_detection_map[host_key] = []
-                    host_detection_map[host_key].append(('beaconing', beacon_analysis))
+                    if is_regular:
+                        # Enhanced correlation tracking
+                        correlated_sigs = [d for d in self.results.get('signature_detections', []) 
+                                         if d.get('session_data', {}).get('host', '') == host_key]
+                        correlated_ml = [d for d in self.results.get('ml_classifications', []) 
+                                       if d.get('session_data', {}).get('host', '') == host_key]
+                        
+                        beacon_analysis['correlated_detections'] = len(correlated_sigs) + len(correlated_ml)
+                        beacon_analysis['correlation_types'] = []
+                        if correlated_sigs:
+                            beacon_analysis['correlation_types'].append('signature')
+                        if correlated_ml:
+                            beacon_analysis['correlation_types'].append('ml')
+                        
+                        # Calculate enhanced pattern strength
+                        beacon_analysis['strength'] = self.enhanced_threat_assessor.pattern_analyzer.calculate_beaconing_strength(beacon_analysis)
+                        
+                        self.results['beacon_candidates'].append(beacon_analysis)
+                        
+                        # Track host detections
+                        if host_key not in host_detection_map:
+                            host_detection_map[host_key] = []
+                        host_detection_map[host_key].append(('beaconing', beacon_analysis))
         
-        # Enhanced behavioral analysis
+        # ... keep existing code (enhanced behavioral analysis)
         beaconing_patterns = self.behavioral_analyzer.analyze_beaconing()
         for pattern in beaconing_patterns:
             pattern['strength'] = self.enhanced_threat_assessor.pattern_analyzer.calculate_beaconing_strength(pattern)
         self.results['beaconing_patterns'] = beaconing_patterns
         
-        # Enhanced communication anomaly detection
         communication_anomalies = self.behavioral_analyzer.analyze_communication_patterns()
         for anomaly in communication_anomalies:
             anomaly['anomaly_score'] = self.enhanced_threat_assessor.anomaly_analyzer.calculate_anomaly_strength(anomaly)
         self.results['behavioral_anomalies'] = communication_anomalies
         
-        # Enhanced suspicious host detection with multi-factor correlation
+        # Enhanced suspicious host detection with advanced statistical analysis
         for host_key, stats in self.host_stats.items():
+            # Extract packet sizes and timing data for enhanced analysis
+            packet_sizes = stats.get('response_sizes', [])
+            timestamps = sorted(stats.get('timestamps', []))
+            
+            # Calculate intervals if we have timestamps
+            intervals = []
+            if len(timestamps) > 1:
+                intervals = [timestamps[i] - timestamps[i-1] for i in range(1, len(timestamps))]
+            
+            # Perform enhanced statistical analysis
+            packet_analysis = self.enhanced_statistical_analyzer.analyze_packet_uniformity(packet_sizes) if packet_sizes else {}
+            timing_analysis = self.enhanced_statistical_analyzer.analyze_timing_patterns(intervals) if intervals else {}
+            cert_analysis = {}  # Certificate analysis would go here if available
+            
+            # Calculate behavioral suspicion using enhanced methods
+            behavioral_score = self.enhanced_statistical_analyzer.calculate_behavioral_score(
+                packet_analysis, timing_analysis, cert_analysis
+            )
+            
+            # Use existing suspicion indicators as base
             suspicion_indicators = self.statistical_analyzer.analyze_host_behavior(host_key, stats)
-            if suspicion_indicators:
+            
+            if suspicion_indicators or behavioral_score > 0.3:
                 # Enhanced correlation scoring
                 correlation_data = {
                     'signature_matches': 0,
                     'ml_matches': 0,
                     'beaconing_matches': 0,
                     'behavioral_matches': 0,
-                    'total_correlation_score': 0
+                    'total_correlation_score': 0,
+                    'behavioral_score': behavioral_score,
+                    'packet_analysis': packet_analysis,
+                    'timing_analysis': timing_analysis
                 }
                 
-                # Count correlations by type
+                # ... keep existing code (correlation counting logic)
                 for detection in self.results.get('signature_detections', []):
                     if detection.get('session_data', {}).get('host', '') == host_key:
                         correlation_data['signature_matches'] += 1
@@ -149,13 +202,26 @@ class AdvancedC2Detector:
                     if anomaly.get('host_key', '') == host_key:
                         correlation_data['behavioral_matches'] += 1
                 
-                # Calculate weighted correlation score
+                # Calculate weighted correlation score including behavioral score
                 correlation_data['total_correlation_score'] = (
-                    correlation_data['signature_matches'] * 0.4 +
-                    correlation_data['ml_matches'] * 0.3 +
+                    correlation_data['signature_matches'] * 0.3 +
+                    correlation_data['ml_matches'] * 0.25 +
                     correlation_data['beaconing_matches'] * 0.2 +
-                    correlation_data['behavioral_matches'] * 0.1
+                    correlation_data['behavioral_matches'] * 0.15 +
+                    behavioral_score * 0.1
                 )
+                
+                # Combine with existing suspicion indicators
+                if not suspicion_indicators:
+                    suspicion_indicators = {
+                        'host_key': host_key,
+                        'suspicion_score': behavioral_score,
+                        'indicators': []
+                    }
+                else:
+                    # Enhance existing suspicion score with behavioral analysis
+                    existing_score = suspicion_indicators.get('suspicion_score', 0)
+                    suspicion_indicators['suspicion_score'] = max(existing_score, behavioral_score)
                 
                 suspicion_indicators['correlation_data'] = correlation_data
                 self.results['suspicious_hosts'][host_key] = suspicion_indicators
@@ -189,22 +255,54 @@ class AdvancedC2Detector:
         return True
 
     def generate_report(self):
-        """Generate enhanced analysis report"""
+        """Generate enhanced analysis report with threat remediation"""
         # Convert sets to lists for JSON serialization
         for host_key, stats in self.host_stats.items():
             if isinstance(stats.get('user_agents'), set):
                 stats['user_agents'] = list(stats['user_agents'])
         
-        # Generate enhanced threat summary
+        # Generate enhanced threat summary with remediation
         threat_summary = self.generate_threat_summary()
         
-        return EnhancedReporter.generate_report(
+        # Generate comprehensive report including remediation
+        report = EnhancedReporter.generate_report(
             self.results, self.host_stats, threat_summary
         )
+        
+        # Add remediation report if threats were detected
+        if threat_summary and threat_summary.remediation_report:
+            report['threat_remediation'] = threat_summary.remediation_report
+            print("[+] Threat remediation plan generated")
+        
+        return report
 
     def print_detailed_report(self, report, verbose=False):
-        """Enhanced console report with threat assessment"""
+        """Enhanced console report with threat assessment and remediation"""
         EnhancedReporter.print_detailed_report(report, verbose)
+        
+        # Print remediation summary if available
+        if 'threat_remediation' in report:
+            remediation = report['threat_remediation']
+            print("\n" + "="*60)
+            print("THREAT REMEDIATION PLAN")
+            print("="*60)
+            print(f"Threat ID: {remediation['threat_id']}")
+            print(f"Threat Type: {remediation['threat_type']}")
+            print(f"Threat Level: {remediation['threat_level']}")
+            print(f"Estimated Timeline: {remediation['estimated_total_time']}")
+            
+            if remediation['immediate_actions']:
+                print(f"\nImmediate Actions Required: {len(remediation['immediate_actions'])}")
+                for i, action in enumerate(remediation['immediate_actions'][:3], 1):
+                    print(f"  {i}. {action['title']} (Priority: {action['priority']})")
+            
+            if remediation['short_term_actions']:
+                print(f"\nShort-term Actions: {len(remediation['short_term_actions'])}")
+            
+            if remediation['long_term_actions']:
+                print(f"Long-term Actions: {len(remediation['long_term_actions'])}")
+            
+            print(f"\nBusiness Impact: {remediation['business_impact_assessment']}")
 
 
 def main():
@@ -237,3 +335,4 @@ def main():
 
 if __name__ == "__main__":
     exit(main())
+
