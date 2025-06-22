@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 # Import enhanced components
 from .enhanced_statistical_analyzer import EnhancedStatisticalAnalyzer
-from .advanced_confidence_calculator import AdvancedConfidenceCalculator
+from .confidence import AdvancedConfidenceCalculator
 from .threat_remediation import ThreatRemediationEngine, RemediationReport
 from .threat_scoring import ThreatScorer
 from .correlation_analyzer import CorrelationAnalyzer
