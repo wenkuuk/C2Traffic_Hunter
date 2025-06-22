@@ -1,9 +1,8 @@
-
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { AlertTriangle, Shield, Activity, TrendingUp, Eye } from "lucide-react";
+import { AlertTriangle, Shield, Activity, TrendingUp, Eye, Info } from "lucide-react";
 
 interface ThreatAssessmentProps {
   assessment: {
@@ -166,6 +165,33 @@ const ThreatAssessmentCard: React.FC<ThreatAssessmentProps> = ({ assessment }) =
           </div>
         </div>
 
+        {/* Correlation Bonus with Explanation */}
+        {assessment.correlation_bonus > 0 && (
+          <div className="p-3 bg-blue-50 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium flex items-center gap-2">
+                <Activity className="h-4 w-4 text-blue-500" />
+                Correlation Bonus
+              </span>
+              <span className="text-sm font-bold text-blue-600">
+                +{(assessment.correlation_bonus * 100).toFixed(1)}%
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <Info className="h-3 w-3 text-blue-500 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-blue-700">
+                <p className="mb-1">Multiple detection methods agree, which:</p>
+                <ul className="list-disc list-inside space-y-0.5 ml-2">
+                  <li>Reduces false positive likelihood</li>
+                  <li>Increases detection confidence</li>
+                  <li>Validates threat assessment accuracy</li>
+                  <li>Indicates sophisticated attack patterns</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Risk Factors */}
         {activeRiskFactors.length > 0 && (
           <div className="space-y-3">
@@ -183,24 +209,6 @@ const ThreatAssessmentCard: React.FC<ThreatAssessmentProps> = ({ assessment }) =
                 </div>
               ))}
             </div>
-          </div>
-        )}
-
-        {/* Correlation Bonus */}
-        {assessment.correlation_bonus > 0 && (
-          <div className="p-3 bg-blue-50 rounded-lg">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium flex items-center gap-2">
-                <Activity className="h-4 w-4 text-blue-500" />
-                Correlation Bonus
-              </span>
-              <span className="text-sm font-bold text-blue-600">
-                +{(assessment.correlation_bonus * 100).toFixed(1)}%
-              </span>
-            </div>
-            <p className="text-xs text-gray-600 mt-1">
-              Multiple detection types correlate, increasing threat confidence
-            </p>
           </div>
         )}
       </CardContent>

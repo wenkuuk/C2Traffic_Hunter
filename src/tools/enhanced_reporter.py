@@ -34,7 +34,8 @@ class EnhancedReporter:
                 'threat_score': threat_summary['threat_score'],
                 'assessment_confidence': threat_summary.get('assessment_confidence', 0),
                 'correlation_bonus': threat_summary.get('correlation_bonus', 0),
-                'component_scores': threat_summary.get('component_scores', {})
+                'component_scores': threat_summary.get('component_scores', {}),
+                'remediation_report': threat_summary.get('remediation_report')  # Add remediation report
             },
             'details': dict(results)
         }
@@ -43,7 +44,7 @@ class EnhancedReporter:
     
     @staticmethod
     def print_detailed_report(report, verbose=False):
-        """Enhanced console report with detailed threat assessment"""
+        """Enhanced console report with detailed threat assessment and remediation"""
         print("\n" + "="*70)
         print("ADVANCED C2 TRAFFIC ANALYSIS REPORT")
         print("="*70)
@@ -53,8 +54,12 @@ class EnhancedReporter:
         print(f"\nTHREAT ASSESSMENT: {summary['threat_level']}")
         print(f"Threat Score: {summary['threat_score']:.3f}")
         print(f"Assessment Confidence: {summary.get('assessment_confidence', 0):.3f}")
-        if summary.get('correlation_bonus', 0) > 0:
-            print(f"Correlation Bonus: +{summary['correlation_bonus']:.3f}")
+        
+        # Explain correlation bonus importance
+        correlation_bonus = summary.get('correlation_bonus', 0)
+        if correlation_bonus > 0:
+            print(f"Correlation Bonus: +{correlation_bonus:.3f}")
+            print("  ↳ Multiple detection methods agree - increases confidence and reduces false positives")
         
         # Display component scores breakdown
         component_scores = summary.get('component_scores', {})
@@ -74,6 +79,24 @@ class EnhancedReporter:
         print(f"  Beaconing patterns: {summary['beaconing_patterns']}")
         print(f"  Large file transfers: {summary['file_transfers']}")
         print(f"  Statistical anomalies: {summary['statistical_anomalies']}")
+        
+        # Display remediation summary if available
+        remediation_report = summary.get('remediation_report')
+        if remediation_report:
+            print(f"\n[!] THREAT REMEDIATION PLAN:")
+            print("-" * 50)
+            print(f"  Threat ID: {remediation_report['threat_id']}")
+            print(f"  Threat Type: {remediation_report['threat_type']}")
+            print(f"  Estimated Timeline: {remediation_report['estimated_total_time']}")
+            print(f"  Immediate Actions: {len(remediation_report.get('immediate_actions', []))}")
+            print(f"  Short-term Actions: {len(remediation_report.get('short_term_actions', []))}")
+            print(f"  Long-term Actions: {len(remediation_report.get('long_term_actions', []))}")
+            
+            if verbose and remediation_report.get('immediate_actions'):
+                print(f"\n  IMMEDIATE ACTIONS REQUIRED:")
+                for i, action in enumerate(remediation_report['immediate_actions'][:3], 1):
+                    print(f"    {i}. {action['title']} ({action['priority']})")
+                    print(f"       {action['description']}")
         
         if verbose and summary['threat_level'] not in ['LOW', 'LOW-MEDIUM']:
             # Show signature detections
@@ -139,3 +162,16 @@ class EnhancedReporter:
                 print(f"    Regularity score: {1-beacon['coefficient_of_variation']:.2f}")
         
         print("\n" + "="*70)
+        
+        # Print correlation explanation
+        if correlation_bonus > 0:
+            print("\nCORRELATION ANALYSIS EXPLANATION:")
+            print("="*40)
+            print("Correlation bonus increases confidence when multiple detection")
+            print("methods agree, which is crucial for:")
+            print("• Reducing false positives")
+            print("• Detecting sophisticated attacks")
+            print("• Cross-validating different detection techniques")
+            print("• Identifying persistent threats")
+            print("="*40)
+
