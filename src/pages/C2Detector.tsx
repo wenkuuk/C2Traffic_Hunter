@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import ThreatAssessmentCard from "@/components/ThreatAssessmentCard";
 import RemediationSummary from "@/components/RemediationSummary";
 import RemediationReport from "@/components/RemediationReport";
+import { MockApiService } from "@/services/mockApiService";
 
 interface AnalysisReport {
   summary: {
@@ -71,20 +71,10 @@ const C2Detector: React.FC = () => {
     }
 
     setIsAnalyzing(true);
-    const formData = new FormData();
-    formData.append('file', file);
 
     try {
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error('Analysis failed');
-      }
-
-      const result = await response.json();
+      // Use mock API service instead of real backend
+      const result = await MockApiService.uploadAndAnalyze(file);
       setReport(result.report);
       
       // Show remediation tab if threats detected
