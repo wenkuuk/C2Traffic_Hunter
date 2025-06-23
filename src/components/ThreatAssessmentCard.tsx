@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { AlertTriangle, Shield, Activity, TrendingUp, Eye, Info } from "lucide-react";
+import { AlertTriangle, Shield, Activity, TrendingUp, Eye, Info, FileText } from "lucide-react";
 
 interface ThreatAssessmentProps {
   assessment: {
@@ -75,6 +75,8 @@ const ThreatAssessmentCard: React.FC<ThreatAssessmentProps> = ({ assessment }) =
     .filter(([_, active]) => active)
     .map(([factor, _]) => factor);
 
+  const requiresRemediation = !['LOW', 'LOW-MEDIUM'].includes(assessment.threat_level);
+
   return (
     <Card className="w-full">
       <CardHeader>
@@ -90,10 +92,35 @@ const ThreatAssessmentCard: React.FC<ThreatAssessmentProps> = ({ assessment }) =
             <Badge variant="outline" className={getConfidenceLevelColor(assessment.confidence_level)}>
               {assessment.confidence_level} Confidence
             </Badge>
+            {requiresRemediation && (
+              <Badge variant="destructive" className="animate-pulse">
+                <FileText className="h-3 w-3 mr-1" />
+                Action Required
+              </Badge>
+            )}
           </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        {/* Remediation Alert */}
+        {requiresRemediation && (
+          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-red-800 mb-1">Immediate Action Required</h4>
+                <p className="text-red-700 text-sm mb-3">
+                  High-risk C2 activity detected. Review the Remediation Plan tab for detailed response actions.
+                </p>
+                <div className="flex items-center gap-2 text-xs text-red-600">
+                  <FileText className="h-3 w-3" />
+                  <span>Comprehensive remediation plan available</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Overall Scores */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
